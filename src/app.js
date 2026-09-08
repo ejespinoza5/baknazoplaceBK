@@ -1,4 +1,4 @@
-require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const env = require('./config/env'); // Valida variables de entorno obligatorias (falla rápido si faltan)
 require('./config/db'); // Importa la configuración de la base de datos
 const express = require('express');

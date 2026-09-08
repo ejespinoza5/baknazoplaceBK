@@ -4,7 +4,7 @@ const faltantes = REQUERIDAS.filter((clave) => !process.env[clave]);
 
 if (faltantes.length > 0) {
     console.error(
-        `Faltan variables de entorno obligatorias: ${faltantes.join(', ')}. Revisa src/.env`
+        `Faltan variables de entorno obligatorias: ${faltantes.join(', ')}. Revisa /.env`
     );
     process.exit(1);
 }
