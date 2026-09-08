@@ -1,0 +1,91 @@
+# Dependencias
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Variables de entorno y archivos de configuración
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+
+# Directorios de logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Directorios de cobertura de pruebas
+coverage/
+.nyc_output/
+
+# Directorios de build
+dist/
+build/
+out/
+.next/
+.nuxt/
+.vuepress/dist/
+
+# Archivos de sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Archivos de editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.tern-project
+.vscode-test/
+
+# Archivos de dependencias específicas
+.eslintcache
+.stylelintcache
+.parcel-cache/
+.cache/
+
+# Archivos de base de datos
+*.sqlite
+*.sqlite3
+*.db
+
+# Archivos de certificados y claves
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+.secrets/
+
+# Archivos de TypeScript (cuando compilas a JS)
+*.tsbuildinfo
+
+# Archivos de entorno de ejecución
+pid
+*.pid
+*.seed
+*.pid.lock
+
+# Archivos de proyecto específicos
+.fttemplates/
+.vercel/
+.netlify/
+.heroku/
+
+# Archivos de carga de archivos
+uploads/
+tmp/
+temp/
+public/uploads/
+
+# Configuraciones de ESLint/Prettier
+.eslintcache
+.prettierignore

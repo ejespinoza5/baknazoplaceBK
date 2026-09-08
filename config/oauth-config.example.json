@@ -1,0 +1,45 @@
+{
+  "_notas": [
+    "Esto es una referencia, NO un archivo que lea el código. Los valores reales van en src/.env (nunca se suben a git).",
+    "No pongas secretos reales en este archivo si lo vas a subir a un repositorio."
+  ],
+  "google": {
+    "donde_se_configura": "https://console.cloud.google.com/apis/credentials",
+    "tipo_de_credencial": "ID de cliente de OAuth 2.0 - tipo Web application (aunque el login final sea desde una app móvil, el Client ID de tipo Web es el que se usa como 'audience' para validar el id_token en el backend)",
+    "variables_env": {
+      "GOOGLE_CLIENT_ID": "El 'Client ID' que te da Google, termina en .apps.googleusercontent.com"
+    },
+    "notas": [
+      "Si más adelante agregas apps de Android/iOS con Google Sign-In, crea también credenciales tipo Android/iOS en la misma pantalla; el backend solo necesita el CLIENT_ID de tipo Web para verificar el id_token con audience correcto.",
+      "El backend verifica el id_token con google-auth-library (nunca confía en datos enviados directamente por el cliente)."
+    ]
+  },
+  "facebook": {
+    "donde_se_configura": "https://developers.facebook.com/apps -> tu app -> Configuración básica",
+    "producto_a_agregar": "Facebook Login",
+    "variables_env": {
+      "FACEBOOK_APP_ID": "App ID de la app en Facebook for Developers",
+      "FACEBOOK_APP_SECRET": "App Secret de la app (mantenerlo secreto, solo en el servidor)"
+    },
+    "permisos_necesarios": ["email", "public_profile"],
+    "notas": [
+      "El backend valida el access_token contra el Graph API (debug_token) usando APP_ID|APP_SECRET antes de confiar en el perfil.",
+      "Si el usuario no otorga el permiso 'email', Facebook no devuelve correo y el backend rechaza el login pidiendo usar correo o Google (usuarios.correo es obligatorio en la BDD)."
+    ]
+  },
+  "smtp_correo": {
+    "para_que": "Enviar los códigos de verificación de correo y de recuperación de contraseña",
+    "opciones_recomendadas": ["Resend", "SendGrid", "Amazon SES", "Mailgun"],
+    "variables_env": {
+      "SMTP_HOST": "host SMTP del proveedor",
+      "SMTP_PORT": "usualmente 587 (STARTTLS) o 465 (SSL)",
+      "SMTP_SECURE": "true si usas el puerto 465, false si usas 587",
+      "SMTP_USER": "usuario/API key del proveedor",
+      "SMTP_PASS": "contraseña/API secret del proveedor",
+      "SMTP_FROM": "remitente que verán los usuarios, ej: BAKNAZO <no-reply@tudominio.com>"
+    },
+    "notas": [
+      "Sin estas variables configuradas, el servidor imprime el código en consola en vez de enviarlo (solo sirve para desarrollo local, no para producción)."
+    ]
+  }
+}

@@ -1,0 +1,53 @@
+Resumen de lo implementado
+
+Sobre tu base existente (Express + PostgreSQL, tablas usuarios/cuentas_autenticacion ya con PERSONA/NEGOCIO y CORREO/GOOGLE/FACEBOOK), dejé un sistema de auth completo y probado end-to-end:
+
+- Registro por correo → envía código de verificación (6 dígitos, hasheado en BDD, expira 15 min, máx. 5 intentos).
+- Login por correo exige correo verificado, contraseña con bcrypt (12 rounds).
+- Access token JWT de 15 min + refresh token opaco de 30 días (hash SHA-256 en BDD, nunca el valor crudo). Rota en cada uso; si detecta que reutilizaste uno ya rotado, revoca todas tus sesiones (protección ante robo de token).
+- Login con Google y Facebook: el backend verifica el id_token/access_token directamente contra Google/Facebook (nunca confía en lo que mande el cliente), y enlaza o crea la cuenta automáticamente.
+- Recuperación de contraseña con el mismo patrón de código, sin filtrar si un correo existe, y cierra todas las sesiones al cambiar la contraseña.
+- Rate limiting en todos los endpoints sensibles, helmet y cors restringido por defecto.
+- Corregí un bug real que encontré al probar: dotenv no estaba cargando src/.env correctamente si el proceso arrancaba desde la raíz del proyecto.
+
+Probé los 13 pasos del flujo completo (registro → bloqueo sin verificar → código incorrecto rechazado → verificación → /me → login → refresh → detección de reuso → recuperación → cambio de contraseña) contra tu BDD real y todo pasó correctamente; ya limpié los usuarios de prueba.
+
+Google y Facebook no los pude probar porque no existen credenciales todavía — eso es lo que sigue.
+
+---
+
+1. Google — Google Cloud Console
+
+1. Ve a console.cloud.google.com → crea un proyecto (o usa uno existente).
+2. APIs & Services → OAuth consent screen: configura el tipo (External si es público), nombre de la app, correo de soporte. Mientras esté en modo "Testing" solo funcionará con las cuentas que agregues como test users; para producción hay que publicarlo (Google revisa la app si pides scopes sensibles, pero email/profile básicos no lo requieren).
+3. APIs & Services → Credentials → Create Credentials → OAuth client ID.
+4. Tipo: Web application (aunque el login final sea desde una app móvil, este es el Client ID que el backend usa como audience para validar el id_token).
+5. Copia el Client ID (termina en .apps.googleusercontent.com) → pégalo en src/.env como GOOGLE_CLIENT_ID.
+6. Cuando tengas frontend: si es web, agrega su dominio en "Authorized JavaScript origins"; si es Android/iOS, crea credenciales adicionales tipo Android/iOS con el SHA-1/bundle ID (el backend sigue usando solo el Client ID web para verificar).
+
+El cliente (web o móvil) obtiene el id_token con el SDK de Google y lo manda a POST /api/auth/login/google con { "id_token": "...", "tipo_cuenta": "PERSONA" } (tipo_cuenta solo es obligatorio la primera vez que ese correo se registra).
+
+2. Facebook — Facebook for Developers
+
+1. Ve a developers.facebook.com/apps → Create App → tipo "Consumer" o "Business".
+2. En el dashboard de la app, agrega el producto Facebook Login.
+3. Configuración básica: copia App ID y App Secret → van a FACEBOOK_APP_ID y FACEBOOK_APP_SECRET en src/.env.
+4. En Facebook Login → Settings, si vas a usar web, agrega tus dominios en "Valid OAuth Redirect URIs"; para móvil se configura desde el SDK nativo.
+5. Mientras la app esté en modo desarrollo, solo funcionará con roles de la app (Admins/Developers/Testers) — para producción hay que pasar App Review si pides permisos más allá de public_profile.
+6. Importante: si el usuario le niega el permiso de email a tu app, Facebook no devuelve correo — mi código ya maneja eso devolviendo un 422 pidiendo que use correo o Google, porque tu BDD requiere correo único.
+
+El cliente manda POST /api/auth/login/facebook con { "access_token": "...", "tipo_cuenta": "NEGOCIO" }.
+
+3. Dónde quedó todo
+
+- src/.env — ya tiene los placeholders (GOOGLE_CLIENT_ID, FACEBOOK_APP_ID, FACEBOOK_APP_SECRET, más SMTP y CORS) listos para que pegues tus valores reales. Ya está en .gitignore.
+- config/oauth-config.example.json — el JSON de referencia que pediste: qué variable corresponde a qué pantalla de configuración de Google/Facebook/SMTP y notas de seguridad de cada una.
+- src/.env.example — plantilla sin secretos para subir al repo cuando inicialices git.
+
+4. Pendiente de tu parte para que quede 100% funcional
+
+- SMTP real (Resend, SendGrid, SES, Mailgun…) — sin esto, los códigos de verificación/recuperación solo se imprimen en la consola del servidor, útil para desarrollo pero no sirve en producción.
+- CORS_ORIGIN — cuando tengas el dominio del frontend, ponlo ahí; por ahora, sin configurarlo, el servidor rechaza cualquier origen por seguridad.
+- Dato de seguridad aparte: vi tu DATABASE_URL y JWT_SECRET reales en el .env (ya estaban ahí, no los toqué salvo agregar el nuevo JWT_REFRESH_SECRET). Como vas a manejar datos reales, te recomiendo rotarlos antes de ir a producción si en algún momento estuvieron expuestos fuera de tu máquina.
+
+claude --resume 23de5176-d640-4994-873a-24a4b29375e5
