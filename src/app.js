@@ -24,7 +24,7 @@ app.use((err, req, res, next) => {
 });
 
 app.get('/', (req, res) => {
-    res.json({ mensaje: 'API funcionandoo0' });
+    res.json({ mensaje: 'API funcionando' });
 });
 
 const PORT = process.env.PORT || 3000;
