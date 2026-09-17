@@ -2,6 +2,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }
 const env = require('./config/env'); // Valida variables de entorno obligatorias (falla rápido si faltan)
 require('./config/db'); // Importa la configuración de la base de datos
 const express = require('express');
+const path = require('path');
 const helmet = require('helmet');
 const cors = require('cors');
 
@@ -16,6 +17,9 @@ app.use(express.json({ limit: '10kb' }));
 
 // Imágenes subidas (fotos de perfil y logos de negocio)
 app.use('/uploads', express.static(env.uploadDir));
+
+// Archivos públicos del proyecto
+app.use('/public', express.static(path.join(__dirname, '..', 'public')));
 
 // Rutas de autenticación
 app.use('/api/auth', authRoutes);
