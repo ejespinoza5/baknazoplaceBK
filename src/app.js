@@ -14,11 +14,23 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '10kb' }));
 
+// Imágenes subidas (fotos de perfil y logos de negocio)
+app.use('/uploads', express.static(env.uploadDir));
+
 // Rutas de autenticación
 app.use('/api/auth', authRoutes);
 
 // Manejador de errores centralizado (nunca exponer detalles internos/stack al cliente)
 app.use((err, req, res, next) => {
+    if (err.name === 'MulterError') {
+        const mensaje =
+            err.code === 'LIMIT_FILE_SIZE'
+                ? 'La imagen supera el tamaño máximo permitido (8 MB)'
+                : err.code === 'LIMIT_UNEXPECTED_FILE'
+                    ? `Campo inesperado: ${err.field}`
+                    : `Error al subir el archivo: ${err.message}`;
+        return res.status(400).json({ error: mensaje });
+    }
     console.error(err.stack || err.message);
     res.status(err.status || 500).json({ error: err.status ? err.message : 'Error interno' });
 });

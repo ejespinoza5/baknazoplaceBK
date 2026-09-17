@@ -9,6 +9,8 @@ if (faltantes.length > 0) {
     process.exit(1);
 }
 
+const path = require('path');
+
 const env = {
     port: process.env.PORT || 3000,
     databaseUrl: process.env.DATABASE_URL,
@@ -21,10 +23,6 @@ const env = {
     google: {
         clientId: process.env.GOOGLE_CLIENT_ID || null,
     },
-    facebook: {
-        appId: process.env.FACEBOOK_APP_ID || null,
-        appSecret: process.env.FACEBOOK_APP_SECRET || null,
-    },
     smtp: {
         host: process.env.SMTP_HOST || null,
         port: Number(process.env.SMTP_PORT || 587),
@@ -33,13 +31,11 @@ const env = {
         pass: process.env.SMTP_PASS || null,
         from: process.env.SMTP_FROM || 'BAKNAZO <no-reply@baknazo.com>',
     },
+    uploadDir: process.env.UPLOAD_DIR || path.join(__dirname, '..', '..', 'uploads'),
 };
 
 if (!env.google.clientId) {
     console.warn('[config] GOOGLE_CLIENT_ID no configurado: /login/google fallará hasta configurarlo.');
-}
-if (!env.facebook.appId || !env.facebook.appSecret) {
-    console.warn('[config] FACEBOOK_APP_ID/FACEBOOK_APP_SECRET no configurados: /login/facebook fallará hasta configurarlos.');
 }
 if (!env.smtp.host) {
     console.warn('[config] SMTP no configurado: los códigos de verificación/recuperación se mostrarán solo en consola.');

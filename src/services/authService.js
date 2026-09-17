@@ -1,21 +1,30 @@
 const bcrypt = require('bcrypt');
+const fs = require('fs');
 const pool = require('../config/db');
 const env = require('../config/env');
 const usuarioModel = require('../models/usuarioModel');
 const cuentaAuthModel = require('../models/cuentaAuthModel');
+const negocioModel = require('../models/negocioModel');
+const categoriaModel = require('../models/categoriaModel');
 const codigoVerificacionModel = require('../models/codigoVerificacionModel');
 const codigoRecuperacionModel = require('../models/codigoRecuperacionModel');
 const refreshTokenModel = require('../models/refreshTokenModel');
 const tokenService = require('./tokenService');
 const emailService = require('./emailService');
 const googleAuthService = require('./googleAuthService');
-const facebookAuthService = require('./facebookAuthService');
+const { procesarFotoPerfil, procesarLogo, rutaAbsolutaDe } = require('./imageService');
 const { generarCodigoNumerico, hashCodigo, hashToken } = require('../utils/codigos');
 const {
     validarCorreo,
     validarContrasena,
     validarTipoCuenta,
     normalizarCorreo,
+    validarTelefono,
+    validarLatitud,
+    validarLongitud,
+    parsearJson,
+    validarHorarioAtencion,
+    validarRedesSociales,
 } = require('../utils/validaciones');
 
 const MINUTOS_EXPIRA_CODIGO = 15;
@@ -33,7 +42,12 @@ const publico = (usuario) => ({
     nombres: usuario.nombres,
     apellidos: usuario.apellidos,
     tipo_cuenta: usuario.tipo_cuenta,
+    foto_perfil: usuario.foto_perfil || null,
 });
+
+// Convierte un objeto/array a string JSON para columnas jsonb.
+// Necesario porque node-postgres serializa los arrays como literales de Postgres, no como JSON.
+const aJson = (valor) => (valor === undefined || valor === null ? null : JSON.stringify(valor));
 
 const generarYEnviarCodigoVerificacion = async (usuario) => {
     const codigo = generarCodigoNumerico();
@@ -46,33 +60,131 @@ const generarYEnviarCodigoVerificacion = async (usuario) => {
     await emailService.enviarCodigoVerificacion(usuario.correo, codigo);
 };
 
+const booleano = (valor, defecto = false) => {
+    if (valor === undefined || valor === null || valor === '') return defecto;
+    return valor === true || valor === 'true' || valor === '1';
+};
+
+const nro = (valor) => {
+    if (valor === undefined || valor === null || valor === '') return null;
+    const n = Number(valor);
+    return Number.isNaN(n) ? null : n;
+};
+
+const validarDatosNegocio = async (datos) => {
+    const {
+        nombreComercial,
+        categoriaId,
+        direccionLocal,
+        tieneLocal,
+        zonaCobertura,
+        telefono,
+        whatsapp,
+        latitud,
+        longitud,
+        horario,
+        redes,
+        descripcionBreve,
+    } = datos;
+
+    if (!nombreComercial || !nombreComercial.trim()) {
+        throw error('nombre_comercial es obligatorio para cuentas de negocio', 400);
+    }
+    if (!categoriaId) {
+        throw error('categoria es obligatoria para cuentas de negocio', 400);
+    }
+    const categoria = await categoriaModel.buscarPorId(categoriaId);
+    if (!categoria) {
+        throw error('La categoría seleccionada no existe', 400);
+    }
+    if (descripcionBreve && descripcionBreve.trim().length > 500) {
+        throw error('La descripción breve no puede superar los 500 caracteres', 400);
+    }
+    if (tieneLocal && (!direccionLocal || !direccionLocal.trim())) {
+        throw error('Si el negocio tiene local, la dirección del local es obligatoria', 400);
+    }
+    if (!tieneLocal && (!zonaCobertura || !zonaCobertura.trim())) {
+        throw error('Si el negocio no tiene local físico, la zona de cobertura es obligatoria', 400);
+    }
+    if (telefono && !validarTelefono(telefono)) {
+        throw error('El teléfono no tiene un formato válido', 400);
+    }
+    if (whatsapp && !validarTelefono(whatsapp)) {
+        throw error('El WhatsApp no tiene un formato válido', 400);
+    }
+    if (latitud !== null && !validarLatitud(latitud)) {
+        throw error('La latitud debe estar entre -90 y 90', 400);
+    }
+    if (longitud !== null && !validarLongitud(longitud)) {
+        throw error('La longitud debe estar entre -180 y 180', 400);
+    }
+    if (!validarHorarioAtencion(horario)) {
+        throw error('El horario de atención no tiene un formato válido', 400);
+    }
+    if (!validarRedesSociales(redes)) {
+        throw error('Las redes sociales deben ser un objeto con nombre y URL', 400);
+    }
+};
+
 // ---------- Registro y verificación por correo ----------
 
-const registrar = async ({ tipo_cuenta, correo, contrasena, nombres, apellidos }) => {
-    const correoNormalizado = normalizarCorreo(correo);
+const registrar = async ({ tipo_cuenta, correo, contrasena, nombres, apellidos, foto_perfil, negocio }) => {
+    const cuerpo = {
+        tipo_cuenta,
+        correo: normalizarCorreo(correo),
+        contrasena,
+        nombres: nombres ? nombres.trim() : null,
+        apellidos: apellidos ? apellidos.trim() : null,
+        // Imágenes ya procesadas por imageService (rutas públicas /uploads/...)
+        fotoPerfilUrl: foto_perfil ? foto_perfil.url : null,
+        ...negocio,
+    };
 
-    if (!validarTipoCuenta(tipo_cuenta)) {
+    if (!validarTipoCuenta(cuerpo.tipo_cuenta)) {
         throw error('tipo_cuenta debe ser PERSONA o NEGOCIO', 400);
     }
-    if (!validarCorreo(correoNormalizado)) {
+    if (!validarCorreo(cuerpo.correo)) {
         throw error('El correo no tiene un formato válido', 400);
     }
-    if (!validarContrasena(contrasena)) {
+    if (!validarContrasena(cuerpo.contrasena)) {
         throw error(
             'La contraseña debe tener mínimo 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial',
             400
         );
     }
-    if (!nombres || !nombres.trim()) {
+    if (!cuerpo.nombres) {
         throw error('El nombre es obligatorio', 400);
     }
 
-    const existente = await usuarioModel.buscarPorCorreo(correoNormalizado);
+    if (cuerpo.tipo_cuenta === 'NEGOCIO') {
+        if (cuerpo.latitud !== undefined && cuerpo.latitud !== null && cuerpo.latitud !== '') {
+            cuerpo.latitud = Number(cuerpo.latitud);
+        }
+        if (cuerpo.longitud !== undefined && cuerpo.longitud !== null && cuerpo.longitud !== '') {
+            cuerpo.longitud = Number(cuerpo.longitud);
+        }
+        await validarDatosNegocio({
+            nombreComercial: cuerpo.nombreComercial,
+            categoriaId: cuerpo.categoriaId,
+            descripcionBreve: cuerpo.descripcionBreve,
+            direccionLocal: cuerpo.direccionLocal,
+            tieneLocal: cuerpo.tieneLocal,
+            zonaCobertura: cuerpo.zonaCobertura,
+            telefono: cuerpo.telefono,
+            whatsapp: cuerpo.whatsapp,
+            latitud: cuerpo.latitud,
+            longitud: cuerpo.longitud,
+            horario: cuerpo.horario,
+            redes: cuerpo.redes,
+        });
+    }
+
+    const existente = await usuarioModel.buscarPorCorreo(cuerpo.correo);
     if (existente) {
         throw error('El correo ya está registrado', 409);
     }
 
-    const hash = await bcrypt.hash(contrasena, env.bcryptRounds);
+    const hash = await bcrypt.hash(cuerpo.contrasena, env.bcryptRounds);
 
     const client = await pool.connect();
     let usuario;
@@ -80,10 +192,10 @@ const registrar = async ({ tipo_cuenta, correo, contrasena, nombres, apellidos }
         await client.query('BEGIN');
 
         const { rows: u } = await client.query(
-            `INSERT INTO usuarios (tipo_cuenta, correo, nombres, apellidos)
-             VALUES ($1, $2, $3, $4)
-             RETURNING id, correo, nombres, apellidos, tipo_cuenta, estado, correo_verificado, creado_en`,
-            [tipo_cuenta, correoNormalizado, nombres.trim(), apellidos ? apellidos.trim() : null]
+            `INSERT INTO usuarios (tipo_cuenta, correo, nombres, apellidos, foto_perfil)
+             VALUES ($1, $2, $3, $4, $5)
+             RETURNING id, correo, nombres, apellidos, tipo_cuenta, estado, foto_perfil, correo_verificado, creado_en`,
+            [cuerpo.tipo_cuenta, cuerpo.correo, cuerpo.nombres, cuerpo.apellidos, cuerpo.fotoPerfilUrl]
         );
         usuario = u[0];
 
@@ -93,9 +205,50 @@ const registrar = async ({ tipo_cuenta, correo, contrasena, nombres, apellidos }
             [usuario.id, hash]
         );
 
+        if (cuerpo.tipo_cuenta === 'NEGOCIO') {
+            const cliente = client; // mismo cliente de la transacción
+            const { rows: n } = await cliente.query(
+                `INSERT INTO negocios (
+                     usuario_id, nombre_comercial, categoria_id, descripcion_breve, logo_url,
+                     provincia, ciudad, sector, direccion_local, tiene_local, latitud, longitud,
+                     telefono, whatsapp, correo_contacto, redes_sociales, horario_atencion,
+                     entrega_domicilio, zona_cobertura
+                 )
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+                 RETURNING id`,
+                [
+                    usuario.id,
+                    cuerpo.nombreComercial,
+                    cuerpo.categoriaId,
+                    cuerpo.descripcionBreve,
+                    cuerpo.logoUrl,
+                    cuerpo.provincia,
+                    cuerpo.ciudad,
+                    cuerpo.sector,
+                    cuerpo.direccionLocal,
+                    cuerpo.tieneLocal,
+                    cuerpo.latitud,
+                    cuerpo.longitud,
+                    cuerpo.telefono,
+                    cuerpo.whatsapp,
+                    cuerpo.correoContacto ? normalizarCorreo(cuerpo.correoContacto) : cuerpo.correo,
+                    aJson(cuerpo.redes),
+                    aJson(cuerpo.horario),
+                    cuerpo.entregaDomicilio,
+                    cuerpo.zonaCobertura,
+                ]
+            );
+            usuario.negocio_id = n[0].id;
+        }
+
         await client.query('COMMIT');
     } catch (e) {
         await client.query('ROLLBACK');
+        // Si falla el registro, se borran las imágenes ya guardadas.
+        for (const url of [cuerpo.fotoPerfilUrl, cuerpo.logoUrl]) {
+            const abs = rutaAbsolutaDe(url);
+            if (abs) fs.promises.unlink(abs).catch(() => {});
+        }
         throw e;
     } finally {
         client.release();
@@ -133,6 +286,8 @@ const verificarCorreo = async ({ correo, codigo }) => {
     await codigoVerificacionModel.marcarVerificado(registro.id);
     await usuarioModel.marcarCorreoVerificado(usuario.id);
     await usuarioModel.actualizarUltimoAcceso(usuario.id);
+
+    emailService.enviarBienvenida(usuario.correo, usuario.nombres).catch(() => {});
 
     const usuarioActualizado = { ...usuario, correo_verificado: true };
     const tokens = await tokenService.emitirParTokens(usuarioActualizado);
@@ -228,7 +383,7 @@ const cerrarSesion = async ({ refresh_token }) => {
     return { mensaje: 'Sesión cerrada' };
 };
 
-// ---------- Login social (Google / Facebook) ----------
+// ---------- Login social (Google) ----------
 
 const loginConProveedor = async ({ proveedor, proveedorId, correo, correoVerificado, nombre, apellido, tipo_cuenta }) => {
     const correoNormalizado = normalizarCorreo(correo);
@@ -305,19 +460,6 @@ const loginGoogle = async ({ id_token, tipo_cuenta }) => {
     });
 };
 
-const loginFacebook = async ({ access_token, tipo_cuenta }) => {
-    const datos = await facebookAuthService.verificarAccessTokenFacebook(access_token);
-    return loginConProveedor({
-        proveedor: 'FACEBOOK',
-        proveedorId: datos.proveedorId,
-        correo: datos.correo,
-        correoVerificado: datos.correoVerificado,
-        nombre: datos.nombre,
-        apellido: datos.apellido,
-        tipo_cuenta,
-    });
-};
-
 // ---------- Recuperación de contraseña ----------
 
 const solicitarRecuperacion = async ({ correo }) => {
@@ -378,7 +520,6 @@ module.exports = {
     refrescarToken,
     cerrarSesion,
     loginGoogle,
-    loginFacebook,
     solicitarRecuperacion,
     restablecerContrasena,
 };

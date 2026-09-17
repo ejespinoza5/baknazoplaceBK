@@ -14,19 +14,6 @@
       "El backend verifica el id_token con google-auth-library (nunca confía en datos enviados directamente por el cliente)."
     ]
   },
-  "facebook": {
-    "donde_se_configura": "https://developers.facebook.com/apps -> tu app -> Configuración básica",
-    "producto_a_agregar": "Facebook Login",
-    "variables_env": {
-      "FACEBOOK_APP_ID": "App ID de la app en Facebook for Developers",
-      "FACEBOOK_APP_SECRET": "App Secret de la app (mantenerlo secreto, solo en el servidor)"
-    },
-    "permisos_necesarios": ["email", "public_profile"],
-    "notas": [
-      "El backend valida el access_token contra el Graph API (debug_token) usando APP_ID|APP_SECRET antes de confiar en el perfil.",
-      "Si el usuario no otorga el permiso 'email', Facebook no devuelve correo y el backend rechaza el login pidiendo usar correo o Google (usuarios.correo es obligatorio en la BDD)."
-    ]
-  },
   "smtp_correo": {
     "para_que": "Enviar los códigos de verificación de correo y de recuperación de contraseña",
     "opciones_recomendadas": ["Resend", "SendGrid", "Amazon SES", "Mailgun"],

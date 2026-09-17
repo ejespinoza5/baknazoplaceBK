@@ -40,7 +40,7 @@ CREATE TABLE cuentas_autenticacion (
     usuario_id UUID NOT NULL
         REFERENCES usuarios(id) ON DELETE CASCADE,
     proveedor VARCHAR(20) NOT NULL
-        CHECK (proveedor IN ('CORREO', 'GOOGLE', 'FACEBOOK')),
+        CHECK (proveedor IN ('CORREO', 'GOOGLE')),
     id_proveedor VARCHAR(255),
     contrasena_hash TEXT,   -- solo cuando proveedor = 'CORREO'
     creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
