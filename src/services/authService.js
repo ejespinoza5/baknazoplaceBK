@@ -287,7 +287,7 @@ const verificarCorreo = async ({ correo, codigo }) => {
     await usuarioModel.marcarCorreoVerificado(usuario.id);
     await usuarioModel.actualizarUltimoAcceso(usuario.id);
 
-    emailService.enviarBienvenida(usuario.correo, usuario.nombres).catch(() => {});
+    emailService.enviarBienvenida(usuario.correo, usuario.nombres, usuario.tipo_cuenta).catch(() => {});
 
     const usuarioActualizado = { ...usuario, correo_verificado: true };
     const tokens = await tokenService.emitirParTokens(usuarioActualizado);

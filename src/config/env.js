@@ -30,8 +30,11 @@ const env = {
         user: process.env.SMTP_USER || null,
         pass: process.env.SMTP_PASS || null,
         from: process.env.SMTP_FROM || 'BAKNAZO <no-reply@baknazo.com>',
+        replyTo: process.env.SMTP_REPLY_TO || null,
     },
     uploadDir: process.env.UPLOAD_DIR || path.join(__dirname, '..', '..', 'uploads'),
+    logoUrl: process.env.LOGO_URL || 'https://apibaknazo.duckdns.org/public/logo.png',
+    frontendUrl: process.env.FRONTEND_URL || 'https://app.baknazo.com',
 };
 
 if (!env.google.clientId) {
