@@ -16,7 +16,7 @@ router.post('/verificar-correo', limitadorVerificacion, authController.verificar
 router.post('/reenviar-verificacion', limitadorVerificacion, authController.reenviarVerificacion);
 
 router.post('/login', limitadorLogin, authController.iniciarSesion);
-router.post('/login/google', limitadorLogin, authController.loginGoogle);
+router.post('/login/google', uploadImagenes, limitadorLogin, authController.loginGoogle);
 router.post('/login/google/vincular', limitadorVerificacion, authController.vincularGoogle);
 router.post('/login/google/reenviar-codigo', limitadorVerificacion, authController.reenviarCodigoVinculacionGoogle);
 

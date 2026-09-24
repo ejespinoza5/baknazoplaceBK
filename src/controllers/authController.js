@@ -9,6 +9,28 @@ const booleano = (valor, defecto = false) => {
     return valor === true || valor === 'true' || valor === '1';
 };
 
+// Campos del negocio enviados como multipart/form-data (registro manual y con Google).
+const datosNegocio = (body, logoUrl) => ({
+    nombreComercial: body.nombre_comercial,
+    categoriaId: body.categoria,
+    descripcionBreve: body.descripcion_breve,
+    logoUrl,
+    provincia: body.provincia,
+    ciudad: body.ciudad,
+    sector: body.sector,
+    direccionLocal: body.direccion_local,
+    tieneLocal: booleano(body.tiene_local, true),
+    latitud: body.latitud,
+    longitud: body.longitud,
+    telefono: body.telefono,
+    whatsapp: body.whatsapp,
+    correoContacto: body.correo_contacto,
+    redes: parsearJson(body.redes_sociales, 'redes_sociales'),
+    horario: parsearJson(body.horario_atencion, 'horario_atencion'),
+    entregaDomicilio: booleano(body.entrega_domicilio),
+    zonaCobertura: body.zona_cobertura,
+});
+
 const registrar = async (req, res, next) => {
     let fotoPerfilUrl = null;
     let logoUrl = null;
@@ -24,29 +46,7 @@ const registrar = async (req, res, next) => {
             logoUrl = await procesarLogo(archivos.logo[0].buffer);
         }
 
-        let negocio = null;
-        if (tipo_cuenta === 'NEGOCIO') {
-            negocio = {
-                nombreComercial: req.body.nombre_comercial,
-                categoriaId: req.body.categoria,
-                descripcionBreve: req.body.descripcion_breve,
-                logoUrl,
-                provincia: req.body.provincia,
-                ciudad: req.body.ciudad,
-                sector: req.body.sector,
-                direccionLocal: req.body.direccion_local,
-                tieneLocal: booleano(req.body.tiene_local, true),
-                latitud: req.body.latitud,
-                longitud: req.body.longitud,
-                telefono: req.body.telefono,
-                whatsapp: req.body.whatsapp,
-                correoContacto: req.body.correo_contacto,
-                redes: parsearJson(req.body.redes_sociales, 'redes_sociales'),
-                horario: parsearJson(req.body.horario_atencion, 'horario_atencion'),
-                entregaDomicilio: booleano(req.body.entrega_domicilio),
-                zonaCobertura: req.body.zona_cobertura,
-            };
-        }
+        const negocio = tipo_cuenta === 'NEGOCIO' ? datosNegocio(req.body, logoUrl) : null;
 
         const usuario = await authService.registrar({
             tipo_cuenta,
@@ -137,15 +137,31 @@ const cerrarSesion = async (req, res, next) => {
 };
 
 const loginGoogle = async (req, res, next) => {
+    let logoUrl = null;
     try {
-        const { id_token, tipo_cuenta } = req.body;
+        const { id_token, tipo_cuenta } = req.body || {};
         if (!id_token) {
             return res.status(400).json({ error: 'id_token requerido' });
         }
-        const resultado = await authService.loginGoogle({ id_token, tipo_cuenta });
+        // Negocio nuevo con Google: llega como multipart/form-data con los datos y el logo opcional.
+        const logo = req.files?.logo?.[0];
+        if (tipo_cuenta === 'NEGOCIO' && logo) {
+            logoUrl = await procesarLogo(logo.buffer);
+        }
+        const negocio = tipo_cuenta === 'NEGOCIO' ? datosNegocio(req.body, logoUrl) : null;
+
+        const resultado = await authService.loginGoogle({ id_token, tipo_cuenta, negocio });
+        // Si el usuario ya existía, el logo no se usó.
+        if (logoUrl && !resultado.negocio_creado) {
+            const abs = rutaAbsolutaDe(logoUrl);
+            if (abs) fs.promises.unlink(abs).catch(() => {});
+        }
+        delete resultado.negocio_creado;
         // 202: la cuenta existe pero falta confirmar la vinculación con el código enviado al correo.
         res.status(resultado.requiere_vinculacion ? 202 : 200).json(resultado);
     } catch (err) {
+        const abs = rutaAbsolutaDe(logoUrl);
+        if (abs) fs.promises.unlink(abs).catch(() => {});
         next(err);
     }
 };

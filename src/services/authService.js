@@ -128,6 +128,66 @@ const validarDatosNegocio = async (datos) => {
 
 // ---------- Registro y verificación por correo ----------
 
+// Normaliza coordenadas y valida los datos del negocio (registro manual y con Google).
+const prepararNegocio = async (datos) => {
+    if (datos.latitud !== undefined && datos.latitud !== null && datos.latitud !== '') {
+        datos.latitud = Number(datos.latitud);
+    }
+    if (datos.longitud !== undefined && datos.longitud !== null && datos.longitud !== '') {
+        datos.longitud = Number(datos.longitud);
+    }
+    await validarDatosNegocio({
+        nombreComercial: datos.nombreComercial,
+        categoriaId: datos.categoriaId,
+        descripcionBreve: datos.descripcionBreve,
+        direccionLocal: datos.direccionLocal,
+        tieneLocal: datos.tieneLocal,
+        zonaCobertura: datos.zonaCobertura,
+        telefono: datos.telefono,
+        whatsapp: datos.whatsapp,
+        latitud: datos.latitud,
+        longitud: datos.longitud,
+        horario: datos.horario,
+        redes: datos.redes,
+    });
+};
+
+// Inserta el negocio dentro de la transacción del registro; devuelve su id.
+const insertarNegocio = async (client, usuarioId, datos, correoUsuario) => {
+    const { rows } = await client.query(
+        `INSERT INTO negocios (
+             usuario_id, nombre_comercial, categoria_id, descripcion_breve, logo_url,
+             provincia, ciudad, sector, direccion_local, tiene_local, latitud, longitud,
+             telefono, whatsapp, correo_contacto, redes_sociales, horario_atencion,
+             entrega_domicilio, zona_cobertura
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+         RETURNING id`,
+        [
+            usuarioId,
+            datos.nombreComercial,
+            datos.categoriaId,
+            datos.descripcionBreve,
+            datos.logoUrl,
+            datos.provincia,
+            datos.ciudad,
+            datos.sector,
+            datos.direccionLocal,
+            datos.tieneLocal,
+            datos.latitud,
+            datos.longitud,
+            datos.telefono,
+            datos.whatsapp,
+            datos.correoContacto ? normalizarCorreo(datos.correoContacto) : correoUsuario,
+            aJson(datos.redes),
+            aJson(datos.horario),
+            datos.entregaDomicilio,
+            datos.zonaCobertura,
+        ]
+    );
+    return rows[0].id;
+};
+
 const registrar = async ({ tipo_cuenta, correo, contrasena, nombres, apellidos, foto_perfil, negocio }) => {
     const cuerpo = {
         tipo_cuenta,
@@ -157,26 +217,7 @@ const registrar = async ({ tipo_cuenta, correo, contrasena, nombres, apellidos, 
     }
 
     if (cuerpo.tipo_cuenta === 'NEGOCIO') {
-        if (cuerpo.latitud !== undefined && cuerpo.latitud !== null && cuerpo.latitud !== '') {
-            cuerpo.latitud = Number(cuerpo.latitud);
-        }
-        if (cuerpo.longitud !== undefined && cuerpo.longitud !== null && cuerpo.longitud !== '') {
-            cuerpo.longitud = Number(cuerpo.longitud);
-        }
-        await validarDatosNegocio({
-            nombreComercial: cuerpo.nombreComercial,
-            categoriaId: cuerpo.categoriaId,
-            descripcionBreve: cuerpo.descripcionBreve,
-            direccionLocal: cuerpo.direccionLocal,
-            tieneLocal: cuerpo.tieneLocal,
-            zonaCobertura: cuerpo.zonaCobertura,
-            telefono: cuerpo.telefono,
-            whatsapp: cuerpo.whatsapp,
-            latitud: cuerpo.latitud,
-            longitud: cuerpo.longitud,
-            horario: cuerpo.horario,
-            redes: cuerpo.redes,
-        });
+        await prepararNegocio(cuerpo);
     }
 
     const existente = await usuarioModel.buscarPorCorreo(cuerpo.correo);
@@ -206,39 +247,7 @@ const registrar = async ({ tipo_cuenta, correo, contrasena, nombres, apellidos, 
         );
 
         if (cuerpo.tipo_cuenta === 'NEGOCIO') {
-            const cliente = client; // mismo cliente de la transacción
-            const { rows: n } = await cliente.query(
-                `INSERT INTO negocios (
-                     usuario_id, nombre_comercial, categoria_id, descripcion_breve, logo_url,
-                     provincia, ciudad, sector, direccion_local, tiene_local, latitud, longitud,
-                     telefono, whatsapp, correo_contacto, redes_sociales, horario_atencion,
-                     entrega_domicilio, zona_cobertura
-                 )
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-                 RETURNING id`,
-                [
-                    usuario.id,
-                    cuerpo.nombreComercial,
-                    cuerpo.categoriaId,
-                    cuerpo.descripcionBreve,
-                    cuerpo.logoUrl,
-                    cuerpo.provincia,
-                    cuerpo.ciudad,
-                    cuerpo.sector,
-                    cuerpo.direccionLocal,
-                    cuerpo.tieneLocal,
-                    cuerpo.latitud,
-                    cuerpo.longitud,
-                    cuerpo.telefono,
-                    cuerpo.whatsapp,
-                    cuerpo.correoContacto ? normalizarCorreo(cuerpo.correoContacto) : cuerpo.correo,
-                    aJson(cuerpo.redes),
-                    aJson(cuerpo.horario),
-                    cuerpo.entregaDomicilio,
-                    cuerpo.zonaCobertura,
-                ]
-            );
-            usuario.negocio_id = n[0].id;
+            usuario.negocio_id = await insertarNegocio(client, usuario.id, cuerpo, cuerpo.correo);
         }
 
         await client.query('COMMIT');
@@ -385,11 +394,12 @@ const cerrarSesion = async ({ refresh_token }) => {
 
 // ---------- Login social (Google) ----------
 
-const loginConProveedor = async ({ proveedor, proveedorId, correo, correoVerificado, nombre, apellido, tipo_cuenta }) => {
+const loginConProveedor = async ({ proveedor, proveedorId, correo, correoVerificado, nombre, apellido, tipo_cuenta, negocio }) => {
     const correoNormalizado = normalizarCorreo(correo);
 
     let cuenta = await cuentaAuthModel.buscarCuentaPorProveedor(proveedor, proveedorId);
     let usuario;
+    let negocioCreado = false;
 
     if (cuenta) {
         usuario = await usuarioModel.buscarPorId(cuenta.usuario_id);
@@ -412,6 +422,12 @@ const loginConProveedor = async ({ proveedor, proveedorId, correo, correoVerific
             if (!validarTipoCuenta(tipo_cuenta)) {
                 throw error('tipo_cuenta (PERSONA o NEGOCIO) es requerido para crear tu cuenta', 400);
             }
+            if (tipo_cuenta === 'NEGOCIO') {
+                if (!negocio) {
+                    throw error('Los datos del negocio son requeridos para crear una cuenta NEGOCIO', 400);
+                }
+                await prepararNegocio(negocio);
+            }
 
             const client = await pool.connect();
             try {
@@ -428,6 +444,10 @@ const loginConProveedor = async ({ proveedor, proveedorId, correo, correoVerific
                      VALUES ($1, $2, $3)`,
                     [usuario.id, proveedor, proveedorId]
                 );
+                if (tipo_cuenta === 'NEGOCIO') {
+                    usuario.negocio_id = await insertarNegocio(client, usuario.id, negocio, correoNormalizado);
+                    negocioCreado = true;
+                }
                 await client.query('COMMIT');
             } catch (e) {
                 await client.query('ROLLBACK');
@@ -444,7 +464,7 @@ const loginConProveedor = async ({ proveedor, proveedorId, correo, correoVerific
 
     await usuarioModel.actualizarUltimoAcceso(usuario.id);
     const tokens = await tokenService.emitirParTokens(usuario);
-    return { ...tokens, usuario: publico(usuario) };
+    return { ...tokens, usuario: publico(usuario), negocio_creado: negocioCreado };
 };
 
 // Reutiliza la tabla codigos_verificacion: el código también prueba que el usuario controla el correo.
@@ -542,7 +562,7 @@ const reenviarCodigoVinculacionGoogle = async ({ id_token }) => {
     return { mensaje: 'Te enviamos un nuevo código para vincular tu cuenta', correo: usuario.correo };
 };
 
-const loginGoogle = async ({ id_token, tipo_cuenta }) => {
+const loginGoogle = async ({ id_token, tipo_cuenta, negocio }) => {
     const datos = await googleAuthService.verificarIdTokenGoogle(id_token);
     return loginConProveedor({
         proveedor: 'GOOGLE',
@@ -552,6 +572,7 @@ const loginGoogle = async ({ id_token, tipo_cuenta }) => {
         nombre: datos.nombre,
         apellido: datos.apellido,
         tipo_cuenta,
+        negocio,
     });
 };
 
