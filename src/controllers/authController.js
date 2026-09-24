@@ -247,6 +247,19 @@ const solicitarRecuperacion = async (req, res, next) => {
     }
 };
 
+const verificarCodigoRecuperacion = async (req, res, next) => {
+    try {
+        const { correo, codigo } = req.body;
+        if (!correo || !codigo) {
+            return res.status(400).json({ error: 'Correo y código son requeridos' });
+        }
+        const resultado = await authService.verificarCodigoRecuperacion({ correo, codigo });
+        res.json(resultado);
+    } catch (err) {
+        next(err);
+    }
+};
+
 const restablecerContrasena = async (req, res, next) => {
     try {
         const { correo, codigo, nueva_contrasena } = req.body;
@@ -294,6 +307,7 @@ module.exports = {
     vincularGoogle,
     reenviarCodigoVinculacionGoogle,
     solicitarRecuperacion,
+    verificarCodigoRecuperacion,
     restablecerContrasena,
     perfil,
 };

@@ -671,15 +671,8 @@ const solicitarRecuperacion = async ({ correo }) => {
     return mensaje;
 };
 
-const restablecerContrasena = async ({ correo, codigo, nueva_contrasena }) => {
-    const correoNormalizado = normalizarCorreo(correo);
-    if (!validarContrasena(nueva_contrasena)) {
-        throw error(
-            'La contraseña debe tener mínimo 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial',
-            400
-        );
-    }
-
+// Comprueba el código de recuperación sin consumirlo; un fallo cuenta como intento.
+const validarCodigoRecuperacion = async (correoNormalizado, codigo) => {
     const usuario = await usuarioModel.buscarPorCorreo(correoNormalizado);
     if (!usuario) {
         throw error('Código inválido o expirado', 400);
@@ -694,6 +687,26 @@ const restablecerContrasena = async ({ correo, codigo, nueva_contrasena }) => {
         await codigoRecuperacionModel.incrementarIntentos(registro.id);
         throw error('Código inválido o expirado', 400);
     }
+
+    return { usuario, registro };
+};
+
+// Paso intermedio opcional: el cliente confirma el código antes de pedir la nueva contraseña.
+const verificarCodigoRecuperacion = async ({ correo, codigo }) => {
+    await validarCodigoRecuperacion(normalizarCorreo(correo), codigo);
+    return { mensaje: 'Código válido. Ahora puedes crear tu nueva contraseña.' };
+};
+
+const restablecerContrasena = async ({ correo, codigo, nueva_contrasena }) => {
+    const correoNormalizado = normalizarCorreo(correo);
+    if (!validarContrasena(nueva_contrasena)) {
+        throw error(
+            'La contraseña debe tener mínimo 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial',
+            400
+        );
+    }
+
+    const { usuario, registro } = await validarCodigoRecuperacion(correoNormalizado, codigo);
 
     const hash = await bcrypt.hash(nueva_contrasena, env.bcryptRounds);
     await cuentaAuthModel.actualizarContrasena(usuario.id, hash);
@@ -771,6 +784,7 @@ module.exports = {
     vincularGoogle,
     reenviarCodigoVinculacionGoogle,
     solicitarRecuperacion,
+    verificarCodigoRecuperacion,
     restablecerContrasena,
     obtenerPerfil,
 };

@@ -27,6 +27,7 @@ router.post('/refrescar-token', authController.refrescarToken);
 router.post('/logout', authController.cerrarSesion);
 
 router.post('/solicitar-recuperacion', limitadorRecuperacion, authController.solicitarRecuperacion);
+router.post('/verificar-codigo-recuperacion', limitadorVerificacion, authController.verificarCodigoRecuperacion);
 router.post('/restablecer-contrasena', limitadorRecuperacion, authController.restablecerContrasena);
 
 router.get('/me', requiereAutenticacion, authController.perfil);
