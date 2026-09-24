@@ -9,17 +9,28 @@ const cors = require('cors');
 const authRoutes = require('./routes/authRoutes');
 const app = express();
 
+// En producción la API está detrás de un proxy inverso (Nginx) que envía X-Forwarded-For.
+// Confiar en 1 salto permite que req.ip (y el rate limiter) usen la IP real del cliente.
+app.set('trust proxy', 1);
+
 app.use(helmet());
 app.use(cors({
     origin: env.corsOrigin.length > 0 ? env.corsOrigin : false,
 }));
 app.use(express.json({ limit: '10kb' }));
 
+// Helmet pone Cross-Origin-Resource-Policy: same-origin, lo que impide que el frontend
+// (otro dominio) muestre estas imágenes. Solo los archivos estáticos se permiten cross-origin.
+const permitirCrossOrigin = (req, res, next) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+};
+
 // Imágenes subidas (fotos de perfil y logos de negocio)
-app.use('/uploads', express.static(env.uploadDir));
+app.use('/uploads', permitirCrossOrigin, express.static(env.uploadDir));
 
 // Archivos públicos del proyecto
-app.use('/public', express.static(path.join(__dirname, '..', 'public')));
+app.use('/public', permitirCrossOrigin, express.static(path.join(__dirname, '..', 'public')));
 
 // Rutas de autenticación
 app.use('/api/auth', authRoutes);
