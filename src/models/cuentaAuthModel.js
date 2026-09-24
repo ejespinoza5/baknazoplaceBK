@@ -45,10 +45,19 @@ const actualizarContrasena = async (usuarioId, contrasenaHash) => {
     );
 };
 
+const listarProveedores = async (usuarioId) => {
+    const { rows } = await pool.query(
+        `SELECT proveedor FROM cuentas_autenticacion WHERE usuario_id = $1 ORDER BY creado_en`,
+        [usuarioId]
+    );
+    return rows.map((r) => r.proveedor);
+};
+
 module.exports = {
     crearCuentaCorreo,
     buscarCuentaCorreo,
     buscarCuentaPorProveedor,
     crearCuentaProveedor,
     actualizarContrasena,
+    listarProveedores,
 };

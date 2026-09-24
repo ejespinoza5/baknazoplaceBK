@@ -400,14 +400,14 @@ const loginConProveedor = async ({ proveedor, proveedorId, correo, correoVerific
             if (!correoVerificado) {
                 throw error('No se pudo vincular la cuenta: el correo no está verificado por el proveedor', 401);
             }
-            try {
-                await cuentaAuthModel.crearCuentaProveedor({ usuarioId: usuario.id, proveedor, idProveedor: proveedorId });
-            } catch (e) {
-                if (e.code === '23505') {
-                    throw error('Ya tienes otra cuenta vinculada con este proveedor', 409);
-                }
-                throw e;
-            }
+            // Ya existe una cuenta con este correo (registro manual): no se vincula automáticamente.
+            // Se envía un código al correo y el cliente debe confirmarlo en /login/google/vincular.
+            await generarYEnviarCodigoVinculacion(usuario, proveedor);
+            return {
+                requiere_vinculacion: true,
+                correo: usuario.correo,
+                mensaje: `Ya existe una cuenta con este correo. Te enviamos un código para vincularla con ${proveedor}.`,
+            };
         } else {
             if (!validarTipoCuenta(tipo_cuenta)) {
                 throw error('tipo_cuenta (PERSONA o NEGOCIO) es requerido para crear tu cuenta', 400);
@@ -445,6 +445,101 @@ const loginConProveedor = async ({ proveedor, proveedorId, correo, correoVerific
     await usuarioModel.actualizarUltimoAcceso(usuario.id);
     const tokens = await tokenService.emitirParTokens(usuario);
     return { ...tokens, usuario: publico(usuario) };
+};
+
+// Reutiliza la tabla codigos_verificacion: el código también prueba que el usuario controla el correo.
+const generarYEnviarCodigoVinculacion = async (usuario, proveedor) => {
+    const codigo = generarCodigoNumerico();
+    const expiraEn = new Date(Date.now() + MINUTOS_EXPIRA_CODIGO * 60 * 1000);
+    await codigoVerificacionModel.crear({
+        usuarioId: usuario.id,
+        codigoHash: hashCodigo(codigo),
+        expiraEn,
+    });
+    await emailService.enviarCodigoVinculacion(usuario.correo, codigo, proveedor);
+};
+
+const vincularConProveedor = async ({ proveedor, proveedorId, correo, correoVerificado, codigo }) => {
+    const correoNormalizado = normalizarCorreo(correo);
+    if (!correoVerificado) {
+        throw error('No se pudo vincular la cuenta: el correo no está verificado por el proveedor', 401);
+    }
+
+    const cuentaExistente = await cuentaAuthModel.buscarCuentaPorProveedor(proveedor, proveedorId);
+    if (cuentaExistente) {
+        throw error('Esta cuenta ya está vinculada. Inicia sesión normalmente.', 409);
+    }
+
+    const usuario = await usuarioModel.buscarPorCorreo(correoNormalizado);
+    if (!usuario) {
+        throw error('Código inválido o expirado', 400);
+    }
+
+    const registro = await codigoVerificacionModel.buscarVigentePorUsuario(usuario.id);
+    if (!registro || registro.intentos >= MAX_INTENTOS_CODIGO || new Date(registro.expira_en) < new Date()) {
+        throw error('Código inválido o expirado', 400);
+    }
+    if (hashCodigo(String(codigo)) !== registro.codigo_hash) {
+        await codigoVerificacionModel.incrementarIntentos(registro.id);
+        throw error('Código inválido o expirado', 400);
+    }
+
+    if (usuario.estado !== 'ACTIVO') {
+        throw error('La cuenta no está activa', 403);
+    }
+
+    try {
+        await cuentaAuthModel.crearCuentaProveedor({ usuarioId: usuario.id, proveedor, idProveedor: proveedorId });
+    } catch (e) {
+        if (e.code === '23505') {
+            throw error('Ya tienes otra cuenta vinculada con este proveedor', 409);
+        }
+        throw e;
+    }
+    await codigoVerificacionModel.marcarVerificado(registro.id);
+
+    // El código llegó al correo, así que el correo queda verificado.
+    if (!usuario.correo_verificado) {
+        await usuarioModel.marcarCorreoVerificado(usuario.id);
+        usuario.correo_verificado = true;
+    }
+
+    await usuarioModel.actualizarUltimoAcceso(usuario.id);
+    const tokens = await tokenService.emitirParTokens(usuario);
+    return { ...tokens, usuario: publico(usuario) };
+};
+
+const vincularGoogle = async ({ id_token, codigo }) => {
+    const datos = await googleAuthService.verificarIdTokenGoogle(id_token);
+    return vincularConProveedor({
+        proveedor: 'GOOGLE',
+        proveedorId: datos.proveedorId,
+        correo: datos.correo,
+        correoVerificado: datos.correoVerificado,
+        codigo,
+    });
+};
+
+// Reenvía el código de vinculación. Genera uno nuevo; el anterior deja de ser válido
+// porque solo se usa el código más reciente.
+const reenviarCodigoVinculacionGoogle = async ({ id_token }) => {
+    const datos = await googleAuthService.verificarIdTokenGoogle(id_token);
+    if (!datos.correoVerificado) {
+        throw error('No se pudo vincular la cuenta: el correo no está verificado por el proveedor', 401);
+    }
+
+    const cuentaExistente = await cuentaAuthModel.buscarCuentaPorProveedor('GOOGLE', datos.proveedorId);
+    if (cuentaExistente) {
+        throw error('Esta cuenta ya está vinculada. Inicia sesión normalmente.', 409);
+    }
+
+    const usuario = await usuarioModel.buscarPorCorreo(normalizarCorreo(datos.correo));
+    if (!usuario) {
+        throw error('No hay una cuenta con este correo para vincular. Inicia sesión con Google para crearla.', 404);
+    }
+
+    await generarYEnviarCodigoVinculacion(usuario, 'GOOGLE');
+    return { mensaje: 'Te enviamos un nuevo código para vincular tu cuenta', correo: usuario.correo };
 };
 
 const loginGoogle = async ({ id_token, tipo_cuenta }) => {
@@ -512,6 +607,61 @@ const restablecerContrasena = async ({ correo, codigo, nueva_contrasena }) => {
     return { mensaje: 'Contraseña actualizada. Vuelve a iniciar sesión.' };
 };
 
+// ---------- Perfil del usuario autenticado ----------
+
+const obtenerPerfil = async (usuarioId) => {
+    const usuario = await usuarioModel.buscarPorId(usuarioId);
+    if (!usuario) {
+        throw error('Usuario no encontrado', 404);
+    }
+
+    const proveedores = await cuentaAuthModel.listarProveedores(usuario.id);
+
+    const perfil = {
+        ...publico(usuario),
+        estado: usuario.estado,
+        correo_verificado: usuario.correo_verificado,
+        correo_verificado_en: usuario.correo_verificado_en,
+        ultimo_acceso_en: usuario.ultimo_acceso_en,
+        creado_en: usuario.creado_en,
+        actualizado_en: usuario.actualizado_en,
+        proveedores,
+        negocio: null,
+    };
+
+    if (usuario.tipo_cuenta === 'NEGOCIO') {
+        const n = await negocioModel.buscarPorUsuarioConCategoria(usuario.id);
+        if (n) {
+            perfil.negocio = {
+                id: n.id,
+                nombre_comercial: n.nombre_comercial,
+                categoria: n.categoria_id ? { id: n.categoria_id, nombre: n.categoria_nombre } : null,
+                descripcion_breve: n.descripcion_breve,
+                logo_url: n.logo_url,
+                provincia: n.provincia,
+                ciudad: n.ciudad,
+                sector: n.sector,
+                direccion_local: n.direccion_local,
+                tiene_local: n.tiene_local,
+                latitud: n.latitud !== null ? Number(n.latitud) : null,
+                longitud: n.longitud !== null ? Number(n.longitud) : null,
+                telefono: n.telefono,
+                whatsapp: n.whatsapp,
+                correo_contacto: n.correo_contacto,
+                redes_sociales: n.redes_sociales,
+                horario_atencion: n.horario_atencion,
+                entrega_domicilio: n.entrega_domicilio,
+                zona_cobertura: n.zona_cobertura,
+                estado: n.estado,
+                creado_en: n.creado_en,
+                actualizado_en: n.actualizado_en,
+            };
+        }
+    }
+
+    return perfil;
+};
+
 module.exports = {
     registrar,
     verificarCorreo,
@@ -520,6 +670,9 @@ module.exports = {
     refrescarToken,
     cerrarSesion,
     loginGoogle,
+    vincularGoogle,
+    reenviarCodigoVinculacionGoogle,
     solicitarRecuperacion,
     restablecerContrasena,
+    obtenerPerfil,
 };

@@ -63,4 +63,16 @@ const buscarPorUsuario = async (usuarioId) => {
     return rows[0] || null;
 };
 
-module.exports = { crearNegocio, buscarPorUsuario };
+// Igual que buscarPorUsuario pero incluye el nombre de la categoría.
+const buscarPorUsuarioConCategoria = async (usuarioId) => {
+    const { rows } = await pool.query(
+        `SELECT n.*, c.nombre AS categoria_nombre
+         FROM negocios n
+         LEFT JOIN categorias c ON c.id = n.categoria_id
+         WHERE n.usuario_id = $1`,
+        [usuarioId]
+    );
+    return rows[0] || null;
+};
+
+module.exports = { crearNegocio, buscarPorUsuario, buscarPorUsuarioConCategoria };

@@ -147,6 +147,18 @@ const htmlCodigoRecuperacion = (codigo) =>
             ${cajaSeguridad('Si no solicitaste este cambio, ignora este correo. Tu contraseña no cambia sola.')}`,
     });
 
+const htmlCodigoVinculacion = (codigo, proveedor = 'GOOGLE') =>
+    plantilla({
+        chip: chip('Seguridad', C.secundario, '#FFFFFF'),
+        titulo: 'Vincula tu cuenta',
+        cuerpoHtml: `
+            <p style="margin-top:0;">Alguien intentó iniciar sesión con <strong>${escaparHtml(proveedor)}</strong> usando el correo de tu cuenta en <strong>BAKNAZO</strong>.</p>
+            <p>Si fuiste tú, ingresa este código en la app para vincular ambas formas de acceso:</p>
+            ${bloqueCodigo(codigo)}
+            ${cajaInfo('El código expira en <strong>15 minutos</strong>. Úsalo solo una vez.')}
+            ${cajaSeguridad('Si no fuiste tú, ignora este correo. Tu cuenta no se vinculará sin este código.')}`,
+    });
+
 const htmlBienvenida = (nombres, tipoCuenta = 'PERSONA') => {
     const texto = tipoCuenta === 'NEGOCIO'
         ? 'Tu cuenta de negocio quedó activa. Ya puedes iniciar sesión con tu correo y contraseña.'
@@ -196,6 +208,15 @@ const enviarCodigoRecuperacion = (correo, codigo) =>
         codigoParaConsola: codigo,
     });
 
+const enviarCodigoVinculacion = (correo, codigo, proveedor = 'GOOGLE') =>
+    enviarCorreo({
+        para: correo,
+        asunto: 'Vincula tu cuenta - BAKNAZO',
+        textoPlano: `Tu código para vincular tu cuenta con ${proveedor} es ${codigo}. Expira en 15 minutos. Si no fuiste tú, ignora este correo.`,
+        html: htmlCodigoVinculacion(codigo, proveedor),
+        codigoParaConsola: codigo,
+    });
+
 const enviarBienvenida = (correo, nombres, tipoCuenta = 'PERSONA') =>
     enviarCorreo({
         para: correo,
@@ -207,9 +228,11 @@ const enviarBienvenida = (correo, nombres, tipoCuenta = 'PERSONA') =>
 module.exports = {
     enviarCodigoVerificacion,
     enviarCodigoRecuperacion,
+    enviarCodigoVinculacion,
     enviarBienvenida,
     // Generadores de HTML (útiles para vistas previas o pruebas)
     htmlCodigoVerificacion,
     htmlCodigoRecuperacion,
+    htmlCodigoVinculacion,
     htmlBienvenida,
 };

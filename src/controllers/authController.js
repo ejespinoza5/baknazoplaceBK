@@ -143,6 +143,33 @@ const loginGoogle = async (req, res, next) => {
             return res.status(400).json({ error: 'id_token requerido' });
         }
         const resultado = await authService.loginGoogle({ id_token, tipo_cuenta });
+        // 202: la cuenta existe pero falta confirmar la vinculación con el código enviado al correo.
+        res.status(resultado.requiere_vinculacion ? 202 : 200).json(resultado);
+    } catch (err) {
+        next(err);
+    }
+};
+
+const reenviarCodigoVinculacionGoogle = async (req, res, next) => {
+    try {
+        const { id_token } = req.body;
+        if (!id_token) {
+            return res.status(400).json({ error: 'id_token requerido' });
+        }
+        const resultado = await authService.reenviarCodigoVinculacionGoogle({ id_token });
+        res.json(resultado);
+    } catch (err) {
+        next(err);
+    }
+};
+
+const vincularGoogle = async (req, res, next) => {
+    try {
+        const { id_token, codigo } = req.body;
+        if (!id_token || !codigo) {
+            return res.status(400).json({ error: 'id_token y codigo son requeridos' });
+        }
+        const resultado = await authService.vincularGoogle({ id_token, codigo });
         res.json(resultado);
     } catch (err) {
         next(err);
@@ -175,8 +202,24 @@ const restablecerContrasena = async (req, res, next) => {
     }
 };
 
-const perfil = async (req, res) => {
-    res.json({ usuario: req.usuario });
+// Las imágenes se guardan como rutas relativas (/uploads/...); se devuelve también la URL absoluta.
+const urlAbsoluta = (req, ruta) => {
+    if (!ruta) return null;
+    if (/^https?:\/\//i.test(ruta)) return ruta;
+    return `${req.protocol}://${req.get('host')}${ruta}`;
+};
+
+const perfil = async (req, res, next) => {
+    try {
+        const usuario = await authService.obtenerPerfil(req.usuario.id);
+        usuario.foto_perfil_url = urlAbsoluta(req, usuario.foto_perfil);
+        if (usuario.negocio) {
+            usuario.negocio.logo_url_completa = urlAbsoluta(req, usuario.negocio.logo_url);
+        }
+        res.json({ usuario });
+    } catch (err) {
+        next(err);
+    }
 };
 
 module.exports = {
@@ -188,6 +231,8 @@ module.exports = {
     refrescarToken,
     cerrarSesion,
     loginGoogle,
+    vincularGoogle,
+    reenviarCodigoVinculacionGoogle,
     solicitarRecuperacion,
     restablecerContrasena,
     perfil,
