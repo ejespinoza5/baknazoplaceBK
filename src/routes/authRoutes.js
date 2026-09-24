@@ -8,9 +8,11 @@ const {
     limitadorLogin,
     limitadorVerificacion,
     limitadorRecuperacion,
+    limitadorCorreo,
 } = require('../middlewares/rateLimiter');
 
 router.get('/categorias', authController.listarCategorias);
+router.post('/correo-existe', limitadorCorreo, authController.correoExiste);
 router.post('/registro', uploadImagenes, limitadorRegistro, authController.registrar);
 router.post('/verificar-correo', limitadorVerificacion, authController.verificarCorreo);
 router.post('/reenviar-verificacion', limitadorVerificacion, authController.reenviarVerificacion);

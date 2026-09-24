@@ -303,6 +303,18 @@ const verificarCorreo = async ({ correo, codigo }) => {
     return { ...tokens, usuario: publico(usuarioActualizado) };
 };
 
+// Lee de forma segura si el correo ya tiene una cuenta registrada.
+// Se usa al inicio del formulario de registro para avisar temprano y no
+// hacer que el cliente llene todos los datos del negocio en vano.
+const correoExiste = async ({ correo }) => {
+    const correoNormalizado = normalizarCorreo(correo);
+    if (!correoNormalizado) {
+        throw error('Correo requerido', 400);
+    }
+    const usuario = await usuarioModel.buscarPorCorreo(correoNormalizado);
+    return { existe: Boolean(usuario) };
+};
+
 const reenviarVerificacion = async ({ correo }) => {
     const correoNormalizado = normalizarCorreo(correo);
     const usuario = await usuarioModel.buscarPorCorreo(correoNormalizado);
@@ -686,6 +698,7 @@ const obtenerPerfil = async (usuarioId) => {
 module.exports = {
     registrar,
     verificarCorreo,
+    correoExiste,
     reenviarVerificacion,
     iniciarSesion,
     refrescarToken,

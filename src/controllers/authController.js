@@ -103,6 +103,16 @@ const reenviarVerificacion = async (req, res, next) => {
     }
 };
 
+const correoExiste = async (req, res, next) => {
+    try {
+        const { correo } = req.body;
+        const resultado = await authService.correoExiste({ correo });
+        res.json(resultado);
+    } catch (err) {
+        next(err);
+    }
+};
+
 const iniciarSesion = async (req, res, next) => {
     try {
         const { correo, contrasena } = req.body;
@@ -242,6 +252,7 @@ module.exports = {
     registrar,
     listarCategorias,
     verificarCorreo,
+    correoExiste,
     reenviarVerificacion,
     iniciarSesion,
     refrescarToken,
