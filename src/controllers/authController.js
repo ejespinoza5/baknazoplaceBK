@@ -9,6 +9,13 @@ const booleano = (valor, defecto = false) => {
     return valor === true || valor === 'true' || valor === '1';
 };
 
+// Entero o null (multipart/form-data envía todo como texto).
+const nro = (valor) => {
+    if (valor === undefined || valor === null || valor === '') return null;
+    const n = Number(valor);
+    return Number.isNaN(n) ? null : n;
+};
+
 // Campos del negocio enviados como multipart/form-data (registro manual y con Google).
 const datosNegocio = (body, logoUrl) => ({
     nombreComercial: body.nombre_comercial,
@@ -56,6 +63,12 @@ const registrar = async (req, res, next) => {
             apellidos: req.body.apellidos,
             foto_perfil: fotoPerfilUrl ? { url: fotoPerfilUrl } : null,
             negocio,
+            consentimiento: {
+                terminosVersion: nro(req.body.acepta_terminos_version),
+                privacidadVersion: nro(req.body.acepta_privacidad_version),
+            },
+            ip: req.ip,
+            user_agent: req.headers['user-agent'],
         });
         res.status(201).json({ mensaje: 'Usuario registrado. Revisa tu correo para verificar la cuenta.', usuario });
     } catch (err) {
@@ -98,6 +111,15 @@ const reenviarVerificacion = async (req, res, next) => {
         }
         const resultado = await authService.reenviarVerificacion({ correo });
         res.json(resultado);
+    } catch (err) {
+        next(err);
+    }
+};
+
+const listarPoliticas = async (req, res, next) => {
+    try {
+        const politicas = await authService.listarPoliticas();
+        res.json({ politicas });
     } catch (err) {
         next(err);
     }
@@ -160,7 +182,17 @@ const loginGoogle = async (req, res, next) => {
         }
         const negocio = tipo_cuenta === 'NEGOCIO' ? datosNegocio(req.body, logoUrl) : null;
 
-        const resultado = await authService.loginGoogle({ id_token, tipo_cuenta, negocio });
+        const resultado = await authService.loginGoogle({
+            id_token,
+            tipo_cuenta,
+            negocio,
+            consentimiento: {
+                terminosVersion: nro(req.body.acepta_terminos_version),
+                privacidadVersion: nro(req.body.acepta_privacidad_version),
+            },
+            ip: req.ip,
+            user_agent: req.headers['user-agent'],
+        });
         // Si el usuario ya existía, el logo no se usó.
         if (logoUrl && !resultado.negocio_creado) {
             const abs = rutaAbsolutaDe(logoUrl);
@@ -251,6 +283,7 @@ const perfil = async (req, res, next) => {
 module.exports = {
     registrar,
     listarCategorias,
+    listarPoliticas,
     verificarCorreo,
     correoExiste,
     reenviarVerificacion,

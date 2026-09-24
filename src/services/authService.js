@@ -9,6 +9,8 @@ const categoriaModel = require('../models/categoriaModel');
 const codigoVerificacionModel = require('../models/codigoVerificacionModel');
 const codigoRecuperacionModel = require('../models/codigoRecuperacionModel');
 const refreshTokenModel = require('../models/refreshTokenModel');
+const politicaModel = require('../models/politicaModel');
+const aceptacionPoliticaModel = require('../models/aceptacionPoliticaModel');
 const tokenService = require('./tokenService');
 const emailService = require('./emailService');
 const googleAuthService = require('./googleAuthService');
@@ -128,6 +130,55 @@ const validarDatosNegocio = async (datos) => {
 
 // ---------- Registro y verificación por correo ----------
 
+// Valida que el usuario aceptó las versiones vigentes de ambas políticas.
+// Devuelve los ids de las políticas aceptadas para registrarlas después.
+const validarConsentimiento = async (consentimiento) => {
+    const terminosVersion = Number(consentimiento && consentimiento.terminosVersion);
+    const privacidadVersion = Number(consentimiento && consentimiento.privacidadVersion);
+
+    if (
+        !Number.isInteger(terminosVersion) ||
+        !Number.isInteger(privacidadVersion) ||
+        terminosVersion <= 0 ||
+        privacidadVersion <= 0
+    ) {
+        throw error(
+            'Debes aceptar los Términos y Condiciones y la Política de Privacidad vigentes para crear tu cuenta',
+            400
+        );
+    }
+
+    const terminos = await politicaModel.buscarPorClaveYVersionVigente('TERMINOS', terminosVersion);
+    const privacidad = await politicaModel.buscarPorClaveYVersionVigente('PRIVACIDAD', privacidadVersion);
+    if (!terminos || !privacidad) {
+        throw error(
+            'Las políticas que aceptaste ya no están vigentes. Revisa los Términos y Condiciones actualizados',
+            400
+        );
+    }
+
+    return { terminosId: terminos.id, privacidadId: privacidad.id };
+};
+
+// Guarda la aceptación dentro de la transacción del registro (prueba de consentimiento).
+const registrarConsentimiento = async (client, usuarioId, politicas, ip, userAgent) => {
+    await aceptacionPoliticaModel.crear({ usuarioId, politicaId: politicas.terminosId, ip, userAgent, client });
+    await aceptacionPoliticaModel.crear({ usuarioId, politicaId: politicas.privacidadId, ip, userAgent, client });
+};
+
+// Políticas vigentes visibles en el registro (permiten "consentimiento informado").
+const listarPoliticas = async () => {
+    const politicas = await politicaModel.listarVigentes();
+    return politicas.map((p) => ({
+        id: p.id,
+        clave: p.clave,
+        version: p.version,
+        titulo: p.titulo,
+        contenido: p.contenido,
+        fecha_publicacion: p.fecha_publicacion,
+    }));
+};
+
 // Normaliza coordenadas y valida los datos del negocio (registro manual y con Google).
 const prepararNegocio = async (datos) => {
     if (datos.latitud !== undefined && datos.latitud !== null && datos.latitud !== '') {
@@ -188,7 +239,7 @@ const insertarNegocio = async (client, usuarioId, datos, correoUsuario) => {
     return rows[0].id;
 };
 
-const registrar = async ({ tipo_cuenta, correo, contrasena, nombres, apellidos, foto_perfil, negocio }) => {
+const registrar = async ({ tipo_cuenta, correo, contrasena, nombres, apellidos, foto_perfil, negocio, consentimiento, ip, user_agent }) => {
     const cuerpo = {
         tipo_cuenta,
         correo: normalizarCorreo(correo),
@@ -220,6 +271,9 @@ const registrar = async ({ tipo_cuenta, correo, contrasena, nombres, apellidos, 
         await prepararNegocio(cuerpo);
     }
 
+    // LOPDP: la cuenta solo se crea si el usuario aceptó las políticas vigentes.
+    const politicasConsentidas = await validarConsentimiento(consentimiento);
+
     const existente = await usuarioModel.buscarPorCorreo(cuerpo.correo);
     if (existente) {
         throw error('El correo ya está registrado', 409);
@@ -249,6 +303,8 @@ const registrar = async ({ tipo_cuenta, correo, contrasena, nombres, apellidos, 
         if (cuerpo.tipo_cuenta === 'NEGOCIO') {
             usuario.negocio_id = await insertarNegocio(client, usuario.id, cuerpo, cuerpo.correo);
         }
+
+        await registrarConsentimiento(client, usuario.id, politicasConsentidas, ip, user_agent);
 
         await client.query('COMMIT');
     } catch (e) {
@@ -406,7 +462,7 @@ const cerrarSesion = async ({ refresh_token }) => {
 
 // ---------- Login social (Google) ----------
 
-const loginConProveedor = async ({ proveedor, proveedorId, correo, correoVerificado, nombre, apellido, tipo_cuenta, negocio }) => {
+const loginConProveedor = async ({ proveedor, proveedorId, correo, correoVerificado, nombre, apellido, tipo_cuenta, negocio, consentimiento, ip, user_agent }) => {
     const correoNormalizado = normalizarCorreo(correo);
 
     let cuenta = await cuentaAuthModel.buscarCuentaPorProveedor(proveedor, proveedorId);
@@ -441,6 +497,9 @@ const loginConProveedor = async ({ proveedor, proveedorId, correo, correoVerific
                 await prepararNegocio(negocio);
             }
 
+            // LOPDP: la cuenta nueva solo se crea si aceptó las políticas vigentes.
+            const politicasConsentidas = await validarConsentimiento(consentimiento);
+
             const client = await pool.connect();
             try {
                 await client.query('BEGIN');
@@ -460,6 +519,7 @@ const loginConProveedor = async ({ proveedor, proveedorId, correo, correoVerific
                     usuario.negocio_id = await insertarNegocio(client, usuario.id, negocio, correoNormalizado);
                     negocioCreado = true;
                 }
+                await registrarConsentimiento(client, usuario.id, politicasConsentidas, ip, user_agent);
                 await client.query('COMMIT');
             } catch (e) {
                 await client.query('ROLLBACK');
@@ -574,7 +634,7 @@ const reenviarCodigoVinculacionGoogle = async ({ id_token }) => {
     return { mensaje: 'Te enviamos un nuevo código para vincular tu cuenta', correo: usuario.correo };
 };
 
-const loginGoogle = async ({ id_token, tipo_cuenta, negocio }) => {
+const loginGoogle = async ({ id_token, tipo_cuenta, negocio, consentimiento, ip, user_agent }) => {
     const datos = await googleAuthService.verificarIdTokenGoogle(id_token);
     return loginConProveedor({
         proveedor: 'GOOGLE',
@@ -585,6 +645,9 @@ const loginGoogle = async ({ id_token, tipo_cuenta, negocio }) => {
         apellido: datos.apellido,
         tipo_cuenta,
         negocio,
+        consentimiento,
+        ip,
+        user_agent,
     });
 };
 
@@ -700,6 +763,7 @@ module.exports = {
     verificarCorreo,
     correoExiste,
     reenviarVerificacion,
+    listarPoliticas,
     iniciarSesion,
     refrescarToken,
     cerrarSesion,

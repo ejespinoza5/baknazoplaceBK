@@ -90,3 +90,35 @@ CREATE TABLE tokens_actualizacion (
 );
 
 CREATE INDEX idx_tokens_usuario ON tokens_actualizacion(usuario_id);
+
+
+-- Políticas versionadas (términos y privacidad) y consentimiento por usuario
+CREATE TABLE politicas (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    clave VARCHAR(30) NOT NULL CHECK (clave IN ('TERMINOS', 'PRIVACIDAD')),
+    version INTEGER NOT NULL,
+    titulo TEXT NOT NULL,
+    contenido TEXT NOT NULL,
+    vigente BOOLEAN NOT NULL DEFAULT FALSE,
+    fecha_publicacion TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (clave, version)
+);
+
+CREATE UNIQUE INDEX uq_politicas_vigente
+    ON politicas (clave) WHERE vigente;
+
+CREATE TABLE aceptaciones_politicas (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    usuario_id UUID NOT NULL
+        REFERENCES usuarios(id) ON DELETE CASCADE,
+    politica_id UUID NOT NULL
+        REFERENCES politicas(id) ON DELETE RESTRICT,
+    ip TEXT,
+    user_agent TEXT,
+    fecha_aceptacion TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (usuario_id, politica_id)
+);
+
+CREATE INDEX idx_aceptaciones_usuario ON aceptaciones_politicas(usuario_id);
+CREATE INDEX idx_aceptaciones_politica ON aceptaciones_politicas(politica_id);

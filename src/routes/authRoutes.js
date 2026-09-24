@@ -12,6 +12,7 @@ const {
 } = require('../middlewares/rateLimiter');
 
 router.get('/categorias', authController.listarCategorias);
+router.get('/politicas', authController.listarPoliticas);
 router.post('/correo-existe', limitadorCorreo, authController.correoExiste);
 router.post('/registro', uploadImagenes, limitadorRegistro, authController.registrar);
 router.post('/verificar-correo', limitadorVerificacion, authController.verificarCorreo);
