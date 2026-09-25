@@ -771,6 +771,195 @@ const obtenerPerfil = async (usuarioId) => {
     return perfil;
 };
 
+// ---------- Edición de perfil ----------
+
+// Texto opcional: se recorta y el vacío se guarda como null.
+const textoONull = (valor) => {
+    if (valor === undefined || valor === null) return null;
+    const t = String(valor).trim();
+    return t === '' ? null : t;
+};
+
+const coordenadaONull = (valor) => (valor === undefined || valor === null || valor === '' ? null : Number(valor));
+
+// Solo se borran imágenes propias (/uploads/...), nunca URLs externas.
+const borrarImagen = (url) => {
+    if (!url || !url.startsWith('/uploads/')) return;
+    fs.promises.unlink(rutaAbsolutaDe(url)).catch(() => {});
+};
+
+// Datos actuales del negocio en el mismo formato que usa el registro.
+const negocioDesdeFila = (n) => ({
+    nombreComercial: n.nombre_comercial,
+    categoriaId: n.categoria_id,
+    descripcionBreve: n.descripcion_breve,
+    logoUrl: n.logo_url,
+    provincia: n.provincia,
+    ciudad: n.ciudad,
+    sector: n.sector,
+    direccionLocal: n.direccion_local,
+    tieneLocal: n.tiene_local,
+    latitud: n.latitud !== null ? Number(n.latitud) : null,
+    longitud: n.longitud !== null ? Number(n.longitud) : null,
+    telefono: n.telefono,
+    whatsapp: n.whatsapp,
+    correoContacto: n.correo_contacto,
+    redes: n.redes_sociales,
+    horario: n.horario_atencion,
+    entregaDomicilio: n.entrega_domicilio,
+    zonaCobertura: n.zona_cobertura,
+});
+
+const CAMPOS_TEXTO_NEGOCIO = [
+    'nombreComercial', 'categoriaId', 'descripcionBreve', 'provincia', 'ciudad', 'sector',
+    'direccionLocal', 'telefono', 'whatsapp', 'correoContacto', 'zonaCobertura',
+];
+
+// Actualización parcial: solo cambia lo que llega; el resto se mantiene.
+// 'usuario' = { nombres?, apellidos? }, 'negocio' = campos del negocio enviados (solo NEGOCIO).
+// Las imágenes nuevas ya vienen procesadas por imageService.
+const actualizarPerfil = async ({
+    usuarioId,
+    usuario: cambiosUsuario = {},
+    negocio: cambiosNegocio = {},
+    fotoPerfilUrl,
+    eliminarFotoPerfil,
+    logoUrl,
+    eliminarLogo,
+}) => {
+    const usuario = await usuarioModel.buscarPorId(usuarioId);
+    if (!usuario) {
+        throw error('Usuario no encontrado', 404);
+    }
+    if (usuario.estado !== 'ACTIVO') {
+        throw error('La cuenta no está activa', 403);
+    }
+
+    const hayCambiosNegocio = Object.keys(cambiosNegocio).length > 0 || logoUrl || eliminarLogo;
+    if (hayCambiosNegocio && usuario.tipo_cuenta !== 'NEGOCIO') {
+        throw error('Solo las cuentas de negocio pueden editar datos del negocio', 400);
+    }
+    const hayCambiosUsuario = Object.keys(cambiosUsuario).length > 0 || fotoPerfilUrl || eliminarFotoPerfil;
+    if (!hayCambiosUsuario && !hayCambiosNegocio) {
+        throw error('No se enviaron cambios', 400);
+    }
+
+    // --- Datos del usuario ---
+    const nombres = cambiosUsuario.nombres !== undefined ? textoONull(cambiosUsuario.nombres) : usuario.nombres;
+    const apellidos = cambiosUsuario.apellidos !== undefined ? textoONull(cambiosUsuario.apellidos) : usuario.apellidos;
+    if (!nombres) {
+        throw error('El nombre es obligatorio', 400);
+    }
+    if (nombres.length > 100 || (apellidos && apellidos.length > 100)) {
+        throw error('Nombres y apellidos no pueden superar los 100 caracteres', 400);
+    }
+    let fotoPerfil = usuario.foto_perfil;
+    if (fotoPerfilUrl) fotoPerfil = fotoPerfilUrl;
+    else if (eliminarFotoPerfil) fotoPerfil = null;
+
+    // --- Datos del negocio (se combinan con los actuales y se valida el resultado) ---
+    let negocioAnterior = null;
+    let negocioFinal = null;
+    if (hayCambiosNegocio) {
+        const fila = await negocioModel.buscarPorUsuario(usuario.id);
+        if (!fila) {
+            throw error('Negocio no encontrado', 404);
+        }
+        negocioAnterior = negocioDesdeFila(fila);
+
+        const cambios = { ...cambiosNegocio };
+        for (const campo of CAMPOS_TEXTO_NEGOCIO) {
+            if (cambios[campo] !== undefined) cambios[campo] = textoONull(cambios[campo]);
+        }
+        if (cambios.latitud !== undefined) cambios.latitud = coordenadaONull(cambios.latitud);
+        if (cambios.longitud !== undefined) cambios.longitud = coordenadaONull(cambios.longitud);
+
+        negocioFinal = { ...negocioAnterior, ...cambios };
+        if (logoUrl) negocioFinal.logoUrl = logoUrl;
+        else if (eliminarLogo) negocioFinal.logoUrl = null;
+
+        await prepararNegocio(negocioFinal);
+        if (negocioFinal.nombreComercial.length > 150) {
+            throw error('El nombre comercial no puede superar los 150 caracteres', 400);
+        }
+        if (negocioFinal.correoContacto && !validarCorreo(normalizarCorreo(negocioFinal.correoContacto))) {
+            throw error('El correo de contacto no tiene un formato válido', 400);
+        }
+        // Igual que en el registro: sin correo de contacto se usa el de la cuenta.
+        negocioFinal.correoContacto = negocioFinal.correoContacto
+            ? normalizarCorreo(negocioFinal.correoContacto)
+            : usuario.correo;
+    }
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        await usuarioModel.actualizarDatosPerfil({ usuarioId: usuario.id, nombres, apellidos, fotoPerfil, client });
+        if (negocioFinal) {
+            await negocioModel.actualizarPorUsuario(usuario.id, negocioFinal, client);
+        }
+        await client.query('COMMIT');
+    } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+    } finally {
+        client.release();
+    }
+
+    // Ya guardado: se eliminan del disco las imágenes reemplazadas o quitadas.
+    if (fotoPerfil !== usuario.foto_perfil) borrarImagen(usuario.foto_perfil);
+    if (negocioFinal && negocioFinal.logoUrl !== negocioAnterior.logoUrl) borrarImagen(negocioAnterior.logoUrl);
+
+    return obtenerPerfil(usuario.id);
+};
+
+// ---------- Cambio de contraseña (usuario autenticado) ----------
+
+const cambiarContrasena = async ({ usuarioId, contrasena_actual, nueva_contrasena, confirmar_contrasena }) => {
+    if (!contrasena_actual || !nueva_contrasena || !confirmar_contrasena) {
+        throw error('Faltan campos obligatorios', 400);
+    }
+    if (nueva_contrasena !== confirmar_contrasena) {
+        throw error('La nueva contraseña y su confirmación no coinciden', 400);
+    }
+    if (!validarContrasena(nueva_contrasena)) {
+        throw error(
+            'La contraseña debe tener mínimo 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial',
+            400
+        );
+    }
+
+    const usuario = await usuarioModel.buscarPorId(usuarioId);
+    if (!usuario) {
+        throw error('Usuario no encontrado', 404);
+    }
+    if (usuario.estado !== 'ACTIVO') {
+        throw error('La cuenta no está activa', 403);
+    }
+
+    const cuenta = await cuentaAuthModel.buscarCuentaCorreo(usuario.id);
+    if (!cuenta || !cuenta.contrasena_hash) {
+        throw error('Tu cuenta inicia sesión con Google y no tiene contraseña para cambiar', 400);
+    }
+
+    // 400 y no 401: un 401 haría que el cliente crea que la sesión expiró.
+    const valida = await bcrypt.compare(contrasena_actual, cuenta.contrasena_hash);
+    if (!valida) {
+        throw error('La contraseña actual es incorrecta', 400);
+    }
+    if (await bcrypt.compare(nueva_contrasena, cuenta.contrasena_hash)) {
+        throw error('La nueva contraseña debe ser diferente a la actual', 400);
+    }
+
+    const hash = await bcrypt.hash(nueva_contrasena, env.bcryptRounds);
+    await cuentaAuthModel.actualizarContrasena(usuario.id, hash);
+
+    // Se cierran todas las sesiones y se emite un par nuevo para este dispositivo.
+    await refreshTokenModel.revocarTodosDelUsuario(usuario.id);
+    const tokens = await tokenService.emitirParTokens(usuario);
+    return { mensaje: 'Contraseña actualizada. Se cerraron las sesiones en otros dispositivos.', ...tokens };
+};
+
 module.exports = {
     registrar,
     verificarCorreo,
@@ -787,4 +976,6 @@ module.exports = {
     verificarCodigoRecuperacion,
     restablecerContrasena,
     obtenerPerfil,
+    actualizarPerfil,
+    cambiarContrasena,
 };

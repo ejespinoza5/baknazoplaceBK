@@ -280,14 +280,97 @@ const urlAbsoluta = (req, ruta) => {
     return `${req.protocol}://${req.get('host')}${ruta}`;
 };
 
+const conUrlsAbsolutas = (req, usuario) => {
+    usuario.foto_perfil_url = urlAbsoluta(req, usuario.foto_perfil);
+    if (usuario.negocio) {
+        usuario.negocio.logo_url_completa = urlAbsoluta(req, usuario.negocio.logo_url);
+    }
+    return usuario;
+};
+
 const perfil = async (req, res, next) => {
     try {
         const usuario = await authService.obtenerPerfil(req.usuario.id);
-        usuario.foto_perfil_url = urlAbsoluta(req, usuario.foto_perfil);
-        if (usuario.negocio) {
-            usuario.negocio.logo_url_completa = urlAbsoluta(req, usuario.negocio.logo_url);
+        res.json({ usuario: conUrlsAbsolutas(req, usuario) });
+    } catch (err) {
+        next(err);
+    }
+};
+
+// Edición parcial: solo se incluyen los campos que el cliente envió.
+const soloEnviados = (campos) =>
+    Object.fromEntries(Object.entries(campos).filter(([, valor]) => valor !== undefined));
+
+const cambiosNegocio = (body) =>
+    soloEnviados({
+        nombreComercial: body.nombre_comercial,
+        categoriaId: body.categoria,
+        descripcionBreve: body.descripcion_breve,
+        provincia: body.provincia,
+        ciudad: body.ciudad,
+        sector: body.sector,
+        direccionLocal: body.direccion_local,
+        tieneLocal: body.tiene_local !== undefined ? booleano(body.tiene_local, true) : undefined,
+        latitud: body.latitud,
+        longitud: body.longitud,
+        telefono: body.telefono,
+        whatsapp: body.whatsapp,
+        correoContacto: body.correo_contacto,
+        redes: body.redes_sociales !== undefined ? parsearJson(body.redes_sociales, 'redes_sociales') : undefined,
+        horario: body.horario_atencion !== undefined ? parsearJson(body.horario_atencion, 'horario_atencion') : undefined,
+        entregaDomicilio: body.entrega_domicilio !== undefined ? booleano(body.entrega_domicilio) : undefined,
+        zonaCobertura: body.zona_cobertura,
+    });
+
+const actualizarPerfil = async (req, res, next) => {
+    let fotoPerfilUrl = null;
+    let logoUrl = null;
+    try {
+        const archivos = req.files || {};
+        const body = req.body || {};
+
+        const negocio = cambiosNegocio(body);
+        if (archivos.logo?.[0] && req.usuario.tipo_cuenta !== 'NEGOCIO') {
+            return res.status(400).json({ error: 'Solo las cuentas de negocio pueden tener logo' });
         }
-        res.json({ usuario });
+
+        if (archivos.foto_perfil?.[0]) {
+            fotoPerfilUrl = await procesarFotoPerfil(archivos.foto_perfil[0].buffer);
+        }
+        if (archivos.logo?.[0]) {
+            logoUrl = await procesarLogo(archivos.logo[0].buffer);
+        }
+
+        const usuario = await authService.actualizarPerfil({
+            usuarioId: req.usuario.id,
+            usuario: soloEnviados({ nombres: body.nombres, apellidos: body.apellidos }),
+            negocio,
+            fotoPerfilUrl,
+            eliminarFotoPerfil: booleano(body.eliminar_foto_perfil),
+            logoUrl,
+            eliminarLogo: booleano(body.eliminar_logo),
+        });
+        res.json({ mensaje: 'Perfil actualizado', usuario: conUrlsAbsolutas(req, usuario) });
+    } catch (err) {
+        // Si algo falla, se borran las imágenes nuevas que ya se guardaron.
+        for (const url of [fotoPerfilUrl, logoUrl]) {
+            const abs = rutaAbsolutaDe(url);
+            if (abs) fs.promises.unlink(abs).catch(() => {});
+        }
+        next(err);
+    }
+};
+
+const cambiarContrasena = async (req, res, next) => {
+    try {
+        const { contrasena_actual, nueva_contrasena, confirmar_contrasena } = req.body || {};
+        const resultado = await authService.cambiarContrasena({
+            usuarioId: req.usuario.id,
+            contrasena_actual,
+            nueva_contrasena,
+            confirmar_contrasena,
+        });
+        res.json(resultado);
     } catch (err) {
         next(err);
     }
@@ -310,4 +393,6 @@ module.exports = {
     verificarCodigoRecuperacion,
     restablecerContrasena,
     perfil,
+    actualizarPerfil,
+    cambiarContrasena,
 };

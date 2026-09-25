@@ -9,6 +9,7 @@ const {
     limitadorVerificacion,
     limitadorRecuperacion,
     limitadorCorreo,
+    limitadorContrasena,
 } = require('../middlewares/rateLimiter');
 
 router.get('/categorias', authController.listarCategorias);
@@ -31,5 +32,8 @@ router.post('/verificar-codigo-recuperacion', limitadorVerificacion, authControl
 router.post('/restablecer-contrasena', limitadorRecuperacion, authController.restablecerContrasena);
 
 router.get('/me', requiereAutenticacion, authController.perfil);
+// La autenticación va antes de multer para no procesar archivos de peticiones sin token.
+router.patch('/perfil', requiereAutenticacion, uploadImagenes, authController.actualizarPerfil);
+router.put('/cambiar-contrasena', requiereAutenticacion, limitadorContrasena, authController.cambiarContrasena);
 
 module.exports = router;

@@ -40,10 +40,20 @@ const marcarCorreoVerificado = async (usuarioId) => {
     );
 };
 
+// 'client' permite ejecutarlo dentro de la transacción de edición de perfil.
+const actualizarDatosPerfil = async ({ usuarioId, nombres, apellidos, fotoPerfil, client }) => {
+    const db = client || pool;
+    await db.query(
+        `UPDATE usuarios SET nombres = $2, apellidos = $3, foto_perfil = $4 WHERE id = $1`,
+        [usuarioId, nombres, apellidos, fotoPerfil]
+    );
+};
+
 module.exports = {
     crearUsuario,
     buscarPorCorreo,
     buscarPorId,
     actualizarUltimoAcceso,
     marcarCorreoVerificado,
+    actualizarDatosPerfil,
 };

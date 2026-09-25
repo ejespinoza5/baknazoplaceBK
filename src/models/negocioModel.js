@@ -75,4 +75,38 @@ const buscarPorUsuarioConCategoria = async (usuarioId) => {
     return rows[0] || null;
 };
 
-module.exports = { crearNegocio, buscarPorUsuario, buscarPorUsuarioConCategoria };
+// Reemplaza todos los datos editables del negocio. 'client' permite usarlo en una transacción.
+const actualizarPorUsuario = async (usuarioId, datos, client) => {
+    const db = client || pool;
+    await db.query(
+        `UPDATE negocios SET
+             nombre_comercial = $2, categoria_id = $3, descripcion_breve = $4, logo_url = $5,
+             provincia = $6, ciudad = $7, sector = $8, direccion_local = $9, tiene_local = $10,
+             latitud = $11, longitud = $12, telefono = $13, whatsapp = $14, correo_contacto = $15,
+             redes_sociales = $16, horario_atencion = $17, entrega_domicilio = $18, zona_cobertura = $19
+         WHERE usuario_id = $1`,
+        [
+            usuarioId,
+            datos.nombreComercial,
+            datos.categoriaId,
+            datos.descripcionBreve,
+            datos.logoUrl,
+            datos.provincia,
+            datos.ciudad,
+            datos.sector,
+            datos.direccionLocal,
+            datos.tieneLocal,
+            datos.latitud,
+            datos.longitud,
+            datos.telefono,
+            datos.whatsapp,
+            datos.correoContacto,
+            aJson(datos.redes),
+            aJson(datos.horario),
+            datos.entregaDomicilio,
+            datos.zonaCobertura,
+        ]
+    );
+};
+
+module.exports = { crearNegocio, buscarPorUsuario, buscarPorUsuarioConCategoria, actualizarPorUsuario };
