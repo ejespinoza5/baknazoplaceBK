@@ -38,6 +38,31 @@ const procesarFotoPerfil = (buffer) =>
 const procesarLogo = (buffer) =>
     procesarImagen({ buffer, subcarpeta: 'logos', maxAncho: 600, maxAlto: 600, calidad: 85 });
 
+// Foto de anuncio: mantiene proporción, máximo 1600px. Devuelve los metadatos para anuncio_fotos;
+// storageKey es relativo a uploadDir (nunca la URL pública).
+const procesarFotoAnuncio = async (buffer) => {
+    const subcarpeta = 'anuncios';
+    const nombre = generarNombre(subcarpeta);
+    const dirAbsoluto = path.join(env.uploadDir, subcarpeta);
+    await fs.promises.mkdir(dirAbsoluto, { recursive: true });
+
+    const info = await sharp(buffer)
+        .rotate()
+        .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 82 })
+        .toFile(path.join(dirAbsoluto, nombre));
+
+    return {
+        storageKey: `${subcarpeta}/${nombre}`,
+        ancho: info.width,
+        alto: info.height,
+        bytes: info.size,
+        mime: 'image/webp',
+    };
+};
+
+const rutaAbsolutaDeStorageKey = (storageKey) => (storageKey ? path.join(env.uploadDir, storageKey) : null);
+
 // Convierte una URL pública (/uploads/...) en su ruta absoluta en disco.
 const rutaAbsolutaDe = (urlPublica) => {
     if (!urlPublica) return null;
@@ -45,4 +70,4 @@ const rutaAbsolutaDe = (urlPublica) => {
     return path.join(env.uploadDir, relativa);
 };
 
-module.exports = { procesarFotoPerfil, procesarLogo, rutaAbsolutaDe };
+module.exports = { procesarFotoPerfil, procesarLogo, procesarFotoAnuncio, rutaAbsolutaDe, rutaAbsolutaDeStorageKey };

@@ -7,6 +7,8 @@ const helmet = require('helmet');
 const cors = require('cors');
 
 const authRoutes = require('./routes/authRoutes');
+const catalogoRoutes = require('./routes/catalogoRoutes');
+const anuncioRoutes = require('./routes/anuncioRoutes');
 const app = express();
 
 // En producción la API está detrás de un proxy inverso (Nginx) que envía X-Forwarded-For.
@@ -35,6 +37,10 @@ app.use('/public', permitirCrossOrigin, express.static(path.join(__dirname, '..'
 // Rutas de autenticación
 app.use('/api/auth', authRoutes);
 
+// Catálogos del formulario y anuncios
+app.use('/api/catalogos', catalogoRoutes);
+app.use('/api/anuncios', anuncioRoutes);
+
 // Manejador de errores centralizado (nunca exponer detalles internos/stack al cliente)
 app.use((err, req, res, next) => {
     if (err.name === 'MulterError') {
@@ -45,6 +51,15 @@ app.use((err, req, res, next) => {
                     ? `Campo inesperado: ${err.field}`
                     : `Error al subir el archivo: ${err.message}`;
         return res.status(400).json({ error: mensaje });
+    }
+    // Validación por campo (anuncios): 422 con el mapa campo → mensaje.
+    if (err.status === 422 && err.errores) {
+        return res.status(422).json({
+            error: err.message,
+            message: err.message,
+            statusCode: 422,
+            errores: err.errores,
+        });
     }
     console.error(err.stack || err.message);
     res.status(err.status || 500).json({ error: err.status ? err.message : 'Error interno' });

@@ -17,4 +17,6 @@ module.exports = {
     limitadorRecuperacion: crearLimitador(15, 5, 'Demasiadas solicitudes. Intenta más tarde.'),
     // Evita adivinar la contraseña actual por fuerza bruta con un token robado.
     limitadorContrasena: crearLimitador(15, 5, 'Demasiados intentos de cambio de contraseña. Intenta más tarde.'),
+    limitadorPublicacion: crearLimitador(60, 30, 'Demasiadas publicaciones. Intenta más tarde.'),
+    limitadorContacto: crearLimitador(15, 60, 'Demasiadas solicitudes. Intenta más tarde.'),
 };

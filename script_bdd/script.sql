@@ -361,3 +361,437 @@ Si modificamos esta Política de Privacidad, publicaremos la nueva versión con 
 La identificación de BAKNAZO y de su representante estará disponible en la información de la plataforma.',
         TRUE)
 ON CONFLICT (clave, version) DO NOTHING;
+
+
+-- ============================================================
+-- ANUNCIOS (productos · servicios · empleo)
+--
+-- Esta sección se puede ejecutar sola sobre una base que ya
+-- tiene todo lo anterior (usuarios, negocios, set_actualizado_en).
+--
+-- Diferencias con el diseño original, adaptadas a este esquema:
+--  · usuarios.id y negocios.id son UUID, así que las FK también.
+--  · 'categorias' ya existe y es de NEGOCIOS (UUID, sin pilar);
+--    las de anuncios van en 'categorias_anuncio' para no romperla.
+--  · autor_usuario_id siempre se llena (quién publicó) y
+--    autor_negocio_id solo si publicó como negocio. El CHECK
+--    num_nonnulls(...) = 1 del diseño era imposible de cumplir
+--    con autor_usuario_id NOT NULL.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- Categorías de anuncios (una lista por pilar)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS categorias_anuncio (
+    id      SERIAL PRIMARY KEY,
+    slug    VARCHAR(60) NOT NULL,
+    nombre  VARCHAR(80) NOT NULL,
+    pilar   VARCHAR(20) NOT NULL
+        CHECK (pilar IN ('productos', 'servicios', 'empleo')),
+    activa  BOOLEAN NOT NULL DEFAULT TRUE,
+    orden   SMALLINT NOT NULL DEFAULT 0,
+    -- "Tecnología" puede existir en productos y en empleo: el slug es único por pilar.
+    UNIQUE (pilar, slug)
+);
+
+INSERT INTO categorias_anuncio (slug, nombre, pilar, orden) VALUES
+    -- Las 9 que hoy tiene el formulario (datos.ts)
+    ('tecnologia',        'Tecnología',                  'productos', 1),
+    ('vehiculos',         'Vehículos',                   'productos', 2),
+    ('hogar',             'Hogar y Electrodomésticos',   'productos', 3),
+    ('moda',              'Moda',                        'productos', 4),
+    ('inmuebles',         'Inmuebles',                   'productos', 5),
+    ('entretenimiento',   'Entretenimiento',             'productos', 6),
+    ('deportes',          'Deportes',                    'productos', 7),
+    ('construccion',      'Construcción y herramientas', 'productos', 8),
+    ('otros',             'Otros',                       'productos', 99),
+    -- Servicios
+    ('tecnologia',        'Tecnología y diseño',         'servicios', 1),
+    ('hogar',             'Hogar y reparaciones',        'servicios', 2),
+    ('belleza',           'Belleza y cuidado personal',  'servicios', 3),
+    ('clases',            'Clases y tutorías',           'servicios', 4),
+    ('eventos',           'Eventos',                     'servicios', 5),
+    ('transporte',        'Transporte y mudanzas',       'servicios', 6),
+    ('salud',             'Salud y bienestar',           'servicios', 7),
+    ('profesionales',     'Servicios profesionales',     'servicios', 8),
+    ('otros',             'Otros',                       'servicios', 99),
+    -- Empleo
+    ('tecnologia',        'Tecnología',                  'empleo', 1),
+    ('ventas',            'Ventas y atención al cliente','empleo', 2),
+    ('administracion',    'Administración y finanzas',   'empleo', 3),
+    ('gastronomia',       'Gastronomía',                 'empleo', 4),
+    ('construccion',      'Construcción y oficios',      'empleo', 5),
+    ('salud',             'Salud',                       'empleo', 6),
+    ('educacion',         'Educación',                   'empleo', 7),
+    ('logistica',         'Logística y transporte',      'empleo', 8),
+    ('otros',             'Otros',                       'empleo', 99)
+ON CONFLICT (pilar, slug) DO NOTHING;
+
+
+-- ------------------------------------------------------------
+-- Territorio: cantones (con su provincia desnormalizada)
+-- Código de 6 dígitos: 2 provincia (INEC) + 2 cantón + '01'.
+-- Generado desde src/data/ecuador.ts del front.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cantones (
+    codigo            CHAR(6) PRIMARY KEY,   -- '170101' Pichincha / Quito
+    nombre            VARCHAR(80) NOT NULL,
+    provincia_codigo  CHAR(2)     NOT NULL,
+    provincia_nombre  VARCHAR(80) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_cantones_provincia ON cantones (provincia_codigo);
+
+INSERT INTO cantones (codigo, nombre, provincia_codigo, provincia_nombre) VALUES
+    ('010101', 'Cuenca', '01', 'Azuay'),
+    ('010201', 'Girón', '01', 'Azuay'),
+    ('010301', 'Gualaceo', '01', 'Azuay'),
+    ('010401', 'Nabón', '01', 'Azuay'),
+    ('010501', 'Paute', '01', 'Azuay'),
+    ('010601', 'Pucará', '01', 'Azuay'),
+    ('010701', 'San Fernando', '01', 'Azuay'),
+    ('010801', 'Santa Isabel', '01', 'Azuay'),
+    ('010901', 'Sevilla de Oro', '01', 'Azuay'),
+    ('011001', 'Sígsig', '01', 'Azuay'),
+    ('011101', 'Oña', '01', 'Azuay'),
+    ('011201', 'Chordeleg', '01', 'Azuay'),
+    ('011301', 'El Pan', '01', 'Azuay'),
+    ('011401', 'Guachapala', '01', 'Azuay'),
+    ('011501', 'Camilo Ponce Enríquez', '01', 'Azuay'),
+    ('020101', 'Guaranda', '02', 'Bolívar'),
+    ('020201', 'Chillanes', '02', 'Bolívar'),
+    ('020301', 'Chimbo', '02', 'Bolívar'),
+    ('020401', 'Echeandía', '02', 'Bolívar'),
+    ('020501', 'San Miguel', '02', 'Bolívar'),
+    ('020601', 'Caluma', '02', 'Bolívar'),
+    ('020701', 'Las Naves', '02', 'Bolívar'),
+    ('030101', 'Azogues', '03', 'Cañar'),
+    ('030201', 'Biblián', '03', 'Cañar'),
+    ('030301', 'Cañar', '03', 'Cañar'),
+    ('030401', 'Déleg', '03', 'Cañar'),
+    ('030501', 'El Tambo', '03', 'Cañar'),
+    ('030601', 'La Troncal', '03', 'Cañar'),
+    ('030701', 'Suscal', '03', 'Cañar'),
+    ('040101', 'Tulcán', '04', 'Carchi'),
+    ('040201', 'Bolívar', '04', 'Carchi'),
+    ('040301', 'Espejo', '04', 'Carchi'),
+    ('040401', 'Mira', '04', 'Carchi'),
+    ('040501', 'Montúfar', '04', 'Carchi'),
+    ('040601', 'San Pedro de Huaca', '04', 'Carchi'),
+    ('050101', 'Latacunga', '05', 'Cotopaxi'),
+    ('050201', 'La Maná', '05', 'Cotopaxi'),
+    ('050301', 'Pangua', '05', 'Cotopaxi'),
+    ('050401', 'Pujilí', '05', 'Cotopaxi'),
+    ('050501', 'Salcedo', '05', 'Cotopaxi'),
+    ('050601', 'Saquisilí', '05', 'Cotopaxi'),
+    ('050701', 'Sigchos', '05', 'Cotopaxi'),
+    ('060101', 'Riobamba', '06', 'Chimborazo'),
+    ('060201', 'Alausí', '06', 'Chimborazo'),
+    ('060301', 'Colta', '06', 'Chimborazo'),
+    ('060401', 'Cumandá', '06', 'Chimborazo'),
+    ('060501', 'Guamote', '06', 'Chimborazo'),
+    ('060601', 'Guano', '06', 'Chimborazo'),
+    ('060701', 'Pallatanga', '06', 'Chimborazo'),
+    ('060801', 'Penipe', '06', 'Chimborazo'),
+    ('060901', 'Chambo', '06', 'Chimborazo'),
+    ('061001', 'Chunchi', '06', 'Chimborazo'),
+    ('070101', 'Machala', '07', 'El Oro'),
+    ('070201', 'Arenillas', '07', 'El Oro'),
+    ('070301', 'Atahualpa', '07', 'El Oro'),
+    ('070401', 'Balsas', '07', 'El Oro'),
+    ('070501', 'Chilla', '07', 'El Oro'),
+    ('070601', 'El Guabo', '07', 'El Oro'),
+    ('070701', 'Huaquillas', '07', 'El Oro'),
+    ('070801', 'Marcabelí', '07', 'El Oro'),
+    ('070901', 'Pasaje', '07', 'El Oro'),
+    ('071001', 'Piñas', '07', 'El Oro'),
+    ('071101', 'Portovelo', '07', 'El Oro'),
+    ('071201', 'Santa Rosa', '07', 'El Oro'),
+    ('071301', 'Zaruma', '07', 'El Oro'),
+    ('071401', 'Las Lajas', '07', 'El Oro'),
+    ('080101', 'Esmeraldas', '08', 'Esmeraldas'),
+    ('080201', 'Eloy Alfaro', '08', 'Esmeraldas'),
+    ('080301', 'Muisne', '08', 'Esmeraldas'),
+    ('080401', 'Quinindé', '08', 'Esmeraldas'),
+    ('080501', 'San Lorenzo', '08', 'Esmeraldas'),
+    ('080601', 'Atacames', '08', 'Esmeraldas'),
+    ('080701', 'Río Verde', '08', 'Esmeraldas'),
+    ('090101', 'Guayaquil', '09', 'Guayas'),
+    ('090201', 'Alfredo Baquerizo Moreno', '09', 'Guayas'),
+    ('090301', 'Balao', '09', 'Guayas'),
+    ('090401', 'Balzar', '09', 'Guayas'),
+    ('090501', 'Colimes', '09', 'Guayas'),
+    ('090601', 'Coronel Marcelino Maridueña', '09', 'Guayas'),
+    ('090701', 'Daule', '09', 'Guayas'),
+    ('090801', 'Durán', '09', 'Guayas'),
+    ('090901', 'El Empalme', '09', 'Guayas'),
+    ('091001', 'El Triunfo', '09', 'Guayas'),
+    ('091101', 'General Antonio Elizalde', '09', 'Guayas'),
+    ('091201', 'Isidro Ayora', '09', 'Guayas'),
+    ('091301', 'Lomas de Sargentillo', '09', 'Guayas'),
+    ('091401', 'Milagro', '09', 'Guayas'),
+    ('091501', 'Naranjal', '09', 'Guayas'),
+    ('091601', 'Naranjito', '09', 'Guayas'),
+    ('091701', 'Nobol', '09', 'Guayas'),
+    ('091801', 'Palestina', '09', 'Guayas'),
+    ('091901', 'Pedro Carbo', '09', 'Guayas'),
+    ('092001', 'Playas', '09', 'Guayas'),
+    ('092101', 'Salitre', '09', 'Guayas'),
+    ('092201', 'Samborondón', '09', 'Guayas'),
+    ('092301', 'Santa Lucía', '09', 'Guayas'),
+    ('092401', 'Simón Bolívar', '09', 'Guayas'),
+    ('092501', 'Yaguachi', '09', 'Guayas'),
+    ('100101', 'Ibarra', '10', 'Imbabura'),
+    ('100201', 'Antonio Ante', '10', 'Imbabura'),
+    ('100301', 'Cotacachi', '10', 'Imbabura'),
+    ('100401', 'Otavalo', '10', 'Imbabura'),
+    ('100501', 'Pimampiro', '10', 'Imbabura'),
+    ('100601', 'San Miguel de Urcuquí', '10', 'Imbabura'),
+    ('110101', 'Loja', '11', 'Loja'),
+    ('110201', 'Calvas', '11', 'Loja'),
+    ('110301', 'Catamayo', '11', 'Loja'),
+    ('110401', 'Celica', '11', 'Loja'),
+    ('110501', 'Chaguarpamba', '11', 'Loja'),
+    ('110601', 'Espíndola', '11', 'Loja'),
+    ('110701', 'Gonzanamá', '11', 'Loja'),
+    ('110801', 'Macará', '11', 'Loja'),
+    ('110901', 'Paltas', '11', 'Loja'),
+    ('111001', 'Pindal', '11', 'Loja'),
+    ('111101', 'Puyango', '11', 'Loja'),
+    ('111201', 'Quilanga', '11', 'Loja'),
+    ('111301', 'Saraguro', '11', 'Loja'),
+    ('111401', 'Sozoranga', '11', 'Loja'),
+    ('111501', 'Zapotillo', '11', 'Loja'),
+    ('111601', 'Olmedo', '11', 'Loja'),
+    ('120101', 'Babahoyo', '12', 'Los Ríos'),
+    ('120201', 'Baba', '12', 'Los Ríos'),
+    ('120301', 'Buena Fe', '12', 'Los Ríos'),
+    ('120401', 'Mocache', '12', 'Los Ríos'),
+    ('120501', 'Montalvo', '12', 'Los Ríos'),
+    ('120601', 'Palenque', '12', 'Los Ríos'),
+    ('120701', 'Pueblo Viejo', '12', 'Los Ríos'),
+    ('120801', 'Quevedo', '12', 'Los Ríos'),
+    ('120901', 'Quinsaloma', '12', 'Los Ríos'),
+    ('121001', 'Urdaneta', '12', 'Los Ríos'),
+    ('121101', 'Valencia', '12', 'Los Ríos'),
+    ('121201', 'Ventanas', '12', 'Los Ríos'),
+    ('121301', 'Vinces', '12', 'Los Ríos'),
+    ('130101', 'Portoviejo', '13', 'Manabí'),
+    ('130201', 'Bolívar', '13', 'Manabí'),
+    ('130301', 'Chone', '13', 'Manabí'),
+    ('130401', 'El Carmen', '13', 'Manabí'),
+    ('130501', 'Flavio Alfaro', '13', 'Manabí'),
+    ('130601', 'Jipijapa', '13', 'Manabí'),
+    ('130701', 'Junín', '13', 'Manabí'),
+    ('130801', 'Manta', '13', 'Manabí'),
+    ('130901', 'Montecristi', '13', 'Manabí'),
+    ('131001', 'Olmedo', '13', 'Manabí'),
+    ('131101', 'Paján', '13', 'Manabí'),
+    ('131201', 'Pedernales', '13', 'Manabí'),
+    ('131301', 'Pichincha', '13', 'Manabí'),
+    ('131401', 'Rocafuerte', '13', 'Manabí'),
+    ('131501', 'Santa Ana', '13', 'Manabí'),
+    ('131601', 'Sucre', '13', 'Manabí'),
+    ('131701', 'Tosagua', '13', 'Manabí'),
+    ('131801', '24 de Mayo', '13', 'Manabí'),
+    ('131901', 'Puerto López', '13', 'Manabí'),
+    ('132001', 'Jama', '13', 'Manabí'),
+    ('132101', 'Jaramijó', '13', 'Manabí'),
+    ('132201', 'San Vicente', '13', 'Manabí'),
+    ('140101', 'Macas', '14', 'Morona Santiago'),
+    ('140201', 'Gualaquiza', '14', 'Morona Santiago'),
+    ('140301', 'Limón Indanza', '14', 'Morona Santiago'),
+    ('140401', 'Palora', '14', 'Morona Santiago'),
+    ('140501', 'Santiago', '14', 'Morona Santiago'),
+    ('140601', 'San Juan Bosco', '14', 'Morona Santiago'),
+    ('140701', 'Huamboya', '14', 'Morona Santiago'),
+    ('140801', 'San José de Morona', '14', 'Morona Santiago'),
+    ('140901', 'Sucúa', '14', 'Morona Santiago'),
+    ('141001', 'Taisha', '14', 'Morona Santiago'),
+    ('141101', 'Tiwintza', '14', 'Morona Santiago'),
+    ('141201', 'Pablo Sexto', '14', 'Morona Santiago'),
+    ('150101', 'Tena', '15', 'Napo'),
+    ('150201', 'Archidona', '15', 'Napo'),
+    ('150301', 'El Chaco', '15', 'Napo'),
+    ('150401', 'Quijos', '15', 'Napo'),
+    ('150501', 'Carlos Julio Arosemena Tola', '15', 'Napo'),
+    ('160101', 'Pastaza', '16', 'Pastaza'),
+    ('160201', 'Mera', '16', 'Pastaza'),
+    ('160301', 'Santa Clara', '16', 'Pastaza'),
+    ('160401', 'Arajuno', '16', 'Pastaza'),
+    ('170101', 'Quito', '17', 'Pichincha'),
+    ('170201', 'Cayambe', '17', 'Pichincha'),
+    ('170301', 'Mejía', '17', 'Pichincha'),
+    ('170401', 'Pedro Moncayo', '17', 'Pichincha'),
+    ('170501', 'Pedro Vicente Maldonado', '17', 'Pichincha'),
+    ('170601', 'Puerto Quito', '17', 'Pichincha'),
+    ('170701', 'San Miguel de Los Bancos', '17', 'Pichincha'),
+    ('170801', 'Rumiñahui', '17', 'Pichincha'),
+    ('180101', 'Ambato', '18', 'Tungurahua'),
+    ('180201', 'Baños de Agua Santa', '18', 'Tungurahua'),
+    ('180301', 'Cevallos', '18', 'Tungurahua'),
+    ('180401', 'Mocha', '18', 'Tungurahua'),
+    ('180501', 'Patate', '18', 'Tungurahua'),
+    ('180601', 'Quero', '18', 'Tungurahua'),
+    ('180701', 'San Pedro de Pelileo', '18', 'Tungurahua'),
+    ('180801', 'Santiago de Píllaro', '18', 'Tungurahua'),
+    ('180901', 'Tisaleo', '18', 'Tungurahua'),
+    ('190101', 'Zamora', '19', 'Zamora Chinchipe'),
+    ('190201', 'Chinchipe', '19', 'Zamora Chinchipe'),
+    ('190301', 'El Pangui', '19', 'Zamora Chinchipe'),
+    ('190401', 'Nangaritza', '19', 'Zamora Chinchipe'),
+    ('190501', 'Palanda', '19', 'Zamora Chinchipe'),
+    ('190601', 'Paquisha', '19', 'Zamora Chinchipe'),
+    ('190701', 'Yacuambi', '19', 'Zamora Chinchipe'),
+    ('190801', 'Yantzaza', '19', 'Zamora Chinchipe'),
+    ('190901', 'Centinela del Cóndor', '19', 'Zamora Chinchipe'),
+    ('200101', 'San Cristóbal', '20', 'Galápagos'),
+    ('200201', 'Isabela', '20', 'Galápagos'),
+    ('200301', 'Santa Cruz', '20', 'Galápagos'),
+    ('210101', 'Lago Agrio', '21', 'Sucumbíos'),
+    ('210201', 'Cascales', '21', 'Sucumbíos'),
+    ('210301', 'Cuyabeno', '21', 'Sucumbíos'),
+    ('210401', 'Gonzalo Pizarro', '21', 'Sucumbíos'),
+    ('210501', 'Putumayo', '21', 'Sucumbíos'),
+    ('210601', 'Shushufindi', '21', 'Sucumbíos'),
+    ('220101', 'Francisco de Orellana', '22', 'Orellana'),
+    ('220201', 'Aguarico', '22', 'Orellana'),
+    ('220301', 'La Joya de los Sachas', '22', 'Orellana'),
+    ('220401', 'Loreto', '22', 'Orellana'),
+    ('230101', 'Santo Domingo', '23', 'Santo Domingo de los Tsáchilas'),
+    ('230201', 'La Concordia', '23', 'Santo Domingo de los Tsáchilas'),
+    ('240101', 'Santa Elena', '24', 'Santa Elena'),
+    ('240201', 'La Libertad', '24', 'Santa Elena'),
+    ('240301', 'Salinas', '24', 'Santa Elena')
+ON CONFLICT (codigo) DO NOTHING;
+
+
+-- ------------------------------------------------------------
+-- Anuncios (núcleo)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS anuncios (
+    id                BIGSERIAL PRIMARY KEY,
+    slug              VARCHAR(140) NOT NULL UNIQUE,   -- SEO: lavadora-samsung-15kg-a1b2c3
+    pilar             VARCHAR(20)  NOT NULL
+        CHECK (pilar IN ('productos', 'servicios', 'empleo')),
+
+    titulo            VARCHAR(120) NOT NULL,
+    descripcion       TEXT,                           -- opcional a propósito
+    categoria_id      INT          NOT NULL REFERENCES categorias_anuncio(id),
+    provincia_codigo  CHAR(2)      NOT NULL,
+    canton_codigo     CHAR(6)      NOT NULL REFERENCES cantones(codigo),
+    sector            VARCHAR(80),                    -- barrio / sector
+
+    precio            NUMERIC(12, 2) CHECK (precio IS NULL OR precio >= 0),  -- NULL = "a convenir"
+    moneda            CHAR(3)      NOT NULL DEFAULT 'USD',
+
+    latitud           NUMERIC(9, 6) CHECK (latitud  IS NULL OR latitud  BETWEEN -90  AND 90),
+    longitud          NUMERIC(9, 6) CHECK (longitud IS NULL OR longitud BETWEEN -180 AND 180),
+
+    autor_usuario_id  UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    autor_negocio_id  UUID          REFERENCES negocios(id) ON DELETE SET NULL,
+
+    estado            VARCHAR(20)  NOT NULL DEFAULT 'BORRADOR'
+        CHECK (estado IN ('BORRADOR', 'PUBLICADO', 'PAUSADO', 'RECHAZADO', 'ELIMINADO')),
+    notas_moderacion  TEXT,
+
+    vistas            INT NOT NULL DEFAULT 0,
+    contactos         INT NOT NULL DEFAULT 0,
+
+    publicado_en      TIMESTAMPTZ,
+    expira_en         TIMESTAMPTZ,
+    creado_en         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    actualizado_en    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    eliminado_en      TIMESTAMPTZ,                    -- soft delete
+
+    -- Un anuncio publicado siempre tiene fecha.
+    CONSTRAINT publicado_con_fecha CHECK (estado <> 'PUBLICADO' OR publicado_en IS NOT NULL),
+    -- Coordenadas: las dos o ninguna.
+    CONSTRAINT coordenadas_completas CHECK ((latitud IS NULL) = (longitud IS NULL)),
+    -- Eliminado <=> tiene fecha de eliminación.
+    CONSTRAINT eliminado_con_fecha CHECK ((estado = 'ELIMINADO') = (eliminado_en IS NOT NULL))
+);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_anuncios_actualizado') THEN
+        CREATE TRIGGER trg_anuncios_actualizado
+            BEFORE UPDATE ON anuncios
+            FOR EACH ROW
+            EXECUTE FUNCTION set_actualizado_en();
+    END IF;
+END $$;
+
+
+-- ------------------------------------------------------------
+-- Detalle por pilar (1 a 1 con anuncios)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS anuncio_producto (
+    anuncio_id  BIGINT PRIMARY KEY REFERENCES anuncios(id) ON DELETE CASCADE,
+    condicion   VARCHAR(20) NOT NULL CHECK (condicion IN ('NUEVO', 'USADO'))
+);
+
+CREATE TABLE IF NOT EXISTS anuncio_servicio (
+    anuncio_id       BIGINT PRIMARY KEY REFERENCES anuncios(id) ON DELETE CASCADE,
+    modalidad_cobro  VARCHAR(20) NOT NULL CHECK (modalidad_cobro IN ('POR_PROYECTO', 'POR_HORA')),
+    zona_cobertura   VARCHAR(150)
+);
+
+-- Jornada y modalidad son cosas distintas: dos columnas, no una.
+CREATE TABLE IF NOT EXISTS anuncio_empleo (
+    anuncio_id  BIGINT PRIMARY KEY REFERENCES anuncios(id) ON DELETE CASCADE,
+    jornada     VARCHAR(20) NOT NULL CHECK (jornada IN ('TIEMPO_COMPLETO', 'MEDIO_TIEMPO', 'POR_TEMPORADA')),
+    modalidad   VARCHAR(20) NOT NULL CHECK (modalidad IN ('REMOTO', 'PRESENCIAL', 'HIBRIDO'))
+);
+
+
+-- ------------------------------------------------------------
+-- Fotos del anuncio (0..6). La portada es orden = 0 (derivado,
+-- nunca un booleano). El UNIQUE es DEFERRABLE para poder
+-- reordenar/reindexar dentro de una transacción.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS anuncio_fotos (
+    id           BIGSERIAL PRIMARY KEY,
+    anuncio_id   BIGINT       NOT NULL REFERENCES anuncios(id) ON DELETE CASCADE,
+    storage_key  VARCHAR(255) NOT NULL,     -- clave en disco/S3, NUNCA la URL pública
+    ancho        INT          NOT NULL,
+    alto         INT          NOT NULL,
+    bytes        INT          NOT NULL,
+    mime         VARCHAR(30)  NOT NULL
+        CHECK (mime IN ('image/jpeg', 'image/png', 'image/webp', 'image/avif')),
+    orden        SMALLINT     NOT NULL CHECK (orden BETWEEN 0 AND 5),
+    creado_en    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_anuncio_fotos_orden UNIQUE (anuncio_id, orden) DEFERRABLE INITIALLY IMMEDIATE
+);
+
+
+-- ------------------------------------------------------------
+-- Idempotencia de POST /api/anuncios: el mismo Idempotency-Key
+-- del mismo usuario devuelve el mismo anuncio (doble toque,
+-- reintento con datos móviles).
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS anuncio_idempotencia (
+    usuario_id  UUID        NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    clave       VARCHAR(100) NOT NULL,
+    anuncio_id  BIGINT      NOT NULL REFERENCES anuncios(id) ON DELETE CASCADE,
+    creado_en   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (usuario_id, clave)
+);
+
+
+-- ------------------------------------------------------------
+-- Índices
+-- ------------------------------------------------------------
+-- El feed: filtrado por pilar y ordenado por fecha. Parcial: no paga por borradores.
+CREATE INDEX IF NOT EXISTS idx_anuncios_feed ON anuncios (pilar, publicado_en DESC, id DESC)
+    WHERE estado = 'PUBLICADO' AND eliminado_en IS NULL;
+
+-- Búsqueda por texto.
+CREATE INDEX IF NOT EXISTS idx_anuncios_titulo ON anuncios USING GIN (to_tsvector('spanish', titulo));
+
+-- "Mis anuncios" y filtro por cantón.
+CREATE INDEX IF NOT EXISTS idx_anuncios_autor ON anuncios (autor_usuario_id, creado_en DESC);
+CREATE INDEX IF NOT EXISTS idx_anuncios_geo   ON anuncios (canton_codigo, publicado_en DESC);
+CREATE INDEX IF NOT EXISTS idx_anuncios_categoria ON anuncios (categoria_id);
+
+CREATE INDEX IF NOT EXISTS idx_anuncio_fotos_anuncio ON anuncio_fotos (anuncio_id, orden);

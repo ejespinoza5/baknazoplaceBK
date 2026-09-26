@@ -17,4 +17,19 @@ const requiereAutenticacion = (req, res, next) => {
     }
 };
 
-module.exports = { requiereAutenticacion };
+// Para rutas públicas que muestran algo distinto al dueño (p. ej. su anuncio pausado).
+// Un token ausente o inválido no es error: simplemente no hay req.usuario.
+const autenticacionOpcional = (req, res, next) => {
+    const [esquema, token] = (req.headers.authorization || '').split(' ');
+    if (esquema === 'Bearer' && token) {
+        try {
+            const payload = verificarAccessToken(token);
+            req.usuario = { id: payload.sub, correo: payload.correo, tipo_cuenta: payload.tipo_cuenta };
+        } catch (e) {
+            // se ignora
+        }
+    }
+    next();
+};
+
+module.exports = { requiereAutenticacion, autenticacionOpcional };
