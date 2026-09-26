@@ -238,19 +238,18 @@ const feed = async (f) => {
     return rows;
 };
 
-// "Mis anuncios": todos los estados menos eliminados, más recientes primero.
-const listarPorAutor = async (usuarioId, estado) => {
-    const valores = [usuarioId];
-    let filtroEstado = '';
-    if (estado) {
-        valores.push(estado);
-        filtroEstado = `AND a.estado = $2`;
-    }
+// "Mis anuncios": todos los estados menos eliminados, más recientes primero, paginado por cursor.
+// El keyset va sobre (creado_en, id): creado_en es NOT NULL, a diferencia de publicado_en (borradores).
+// creado_en_exacto conserva los microsegundos para que el cursor no salte filas del mismo milisegundo.
+const listarPorAutor = async ({ usuarioId, estado, cursor, limite }) => {
     const { rows } = await pool.query(
-        `${SELECT_BASE}
-         WHERE a.autor_usuario_id = $1 AND a.eliminado_en IS NULL ${filtroEstado}
-         ORDER BY a.creado_en DESC, a.id DESC`,
-        valores
+        `${SELECT_BASE.replace('SELECT a.*,', 'SELECT a.*, a.creado_en::text AS creado_en_exacto,')}
+         WHERE a.autor_usuario_id = $1 AND a.eliminado_en IS NULL
+           AND ($2::text IS NULL OR a.estado = $2)
+           AND ($3::timestamptz IS NULL OR (a.creado_en, a.id) < ($3::timestamptz, $4::bigint))
+         ORDER BY a.creado_en DESC, a.id DESC
+         LIMIT $5`,
+        [usuarioId, estado, cursor ? cursor.c : null, cursor ? cursor.id : null, limite + 1]
     );
     return rows;
 };

@@ -368,12 +368,16 @@ const obtener = async ({ idOSlug, usuarioId, base }) => {
 
 // ---------- Feed ----------
 
+const REGEX_TIMESTAMP_PG = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,6})?([+-]\d{2}(:?\d{2}){0,2}|Z)?$/;
+
 const decodificarCursor = (cursor, orden) => {
     try {
         const c = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
         const idValido = /^\d+$/.test(String(c.id));
         if (orden === 'cercanos' && idValido && typeof c.d === 'number' && Number.isFinite(c.d)) return c;
         if (orden === 'recientes' && idValido && typeof c.p === 'string' && !Number.isNaN(Date.parse(c.p))) return c;
+        // 'mios': creado_en tal como lo imprime Postgres (con microsegundos y zona horaria).
+        if (orden === 'mios' && idValido && typeof c.c === 'string' && REGEX_TIMESTAMP_PG.test(c.c)) return c;
     } catch (e) {
         // cursor corrupto
     }
@@ -381,9 +385,10 @@ const decodificarCursor = (cursor, orden) => {
 };
 
 const codificarCursor = (fila, orden) => {
-    const c = orden === 'cercanos'
-        ? { d: fila.distancia_km, id: String(fila.id) }
-        : { p: new Date(fila.publicado_en).toISOString(), id: String(fila.id) };
+    let c;
+    if (orden === 'cercanos') c = { d: fila.distancia_km, id: String(fila.id) };
+    else if (orden === 'mios') c = { c: fila.creado_en_exacto, id: String(fila.id) };
+    else c = { p: new Date(fila.publicado_en).toISOString(), id: String(fila.id) };
     return Buffer.from(JSON.stringify(c)).toString('base64url');
 };
 
@@ -392,6 +397,26 @@ const numeroOpcional = (valor, nombre, { min = -Infinity, max = Infinity } = {})
     const n = Number(valor);
     if (Number.isNaN(n) || n < min || n > max) throw error(`Parámetro '${nombre}' inválido`, 400);
     return n;
+};
+
+// 1..LIMITE_FEED_MAX; 0 o texto → 400, valores grandes se recortan.
+const limiteDePagina = (valor) =>
+    Math.min(
+        Math.max(Math.trunc(numeroOpcional(valor, 'limite', { min: 1 }) || LIMITE_FEED_DEFECTO), 1),
+        LIMITE_FEED_MAX
+    );
+
+// Truco de hayMas: el modelo pide limite + 1 filas; si sobra una, hay otra página.
+const paginar = (filas, limite, orden) => {
+    const hayMas = filas.length > limite;
+    const pagina = hayMas ? filas.slice(0, limite) : filas;
+    return {
+        filas: pagina,
+        pagina: {
+            siguienteCursor: hayMas ? codificarCursor(pagina[pagina.length - 1], orden) : null,
+            hayMas,
+        },
+    };
 };
 
 const listarFeed = async ({ query, base }) => {
@@ -412,10 +437,7 @@ const listarFeed = async ({ query, base }) => {
     const radioKm = numeroOpcional(query.radioKm, 'radioKm', { min: 0.1, max: 1000 });
     if (radioKm !== null && lat === null) throw error("'radioKm' requiere lat y lng", 400);
 
-    const limite = Math.min(
-        Math.max(Math.trunc(numeroOpcional(query.limite, 'limite', { min: 1 }) || LIMITE_FEED_DEFECTO), 1),
-        LIMITE_FEED_MAX
-    );
+    const limite = limiteDePagina(query.limite);
 
     const q = texto(query.q);
     const filas = await anuncioModel.feed({
@@ -434,23 +456,29 @@ const listarFeed = async ({ query, base }) => {
         limite,
     });
 
-    const hayMas = filas.length > limite;
-    const pagina = hayMas ? filas.slice(0, limite) : filas;
+    const { filas: pagina, pagina: infoPagina } = paginar(filas, limite, orden);
     return {
         items: pagina.map((f) => aItemFeed(f, base)),
-        pagina: {
-            siguienteCursor: hayMas ? codificarCursor(pagina[pagina.length - 1], orden) : null,
-            hayMas,
-        },
+        pagina: infoPagina,
     };
 };
 
-const listarMios = async ({ usuarioId, estado, base }) => {
+const listarMios = async ({ usuarioId, query, base }) => {
+    const estado = query.estado || null;
     const estados = ['BORRADOR', 'PUBLICADO', 'PAUSADO', 'RECHAZADO'];
     if (estado && !estados.includes(estado)) throw error("Parámetro 'estado' inválido", 400);
-    const filas = await anuncioModel.listarPorAutor(usuarioId, estado || null);
+
+    const limite = limiteDePagina(query.limite);
+    const filas = await anuncioModel.listarPorAutor({
+        usuarioId,
+        estado,
+        cursor: query.cursor ? decodificarCursor(query.cursor, 'mios') : null,
+        limite,
+    });
+
+    const { filas: pagina, pagina: infoPagina } = paginar(filas, limite, 'mios');
     return {
-        items: filas.map((f) => ({
+        items: pagina.map((f) => ({
             ...aItemFeed(f, base),
             estado: f.estado,
             vistas: f.vistas,
@@ -458,6 +486,7 @@ const listarMios = async ({ usuarioId, estado, base }) => {
             creadoEn: f.creado_en,
             notasModeracion: f.notas_moderacion,
         })),
+        pagina: infoPagina,
     };
 };
 

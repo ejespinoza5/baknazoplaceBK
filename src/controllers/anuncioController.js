@@ -47,7 +47,7 @@ const listarMios = async (req, res, next) => {
     try {
         const resultado = await anuncioService.listarMios({
             usuarioId: req.usuario.id,
-            estado: req.query.estado,
+            query: req.query,
             base: baseUrl(req),
         });
         res.json(resultado);

@@ -790,7 +790,8 @@ CREATE INDEX IF NOT EXISTS idx_anuncios_feed ON anuncios (pilar, publicado_en DE
 CREATE INDEX IF NOT EXISTS idx_anuncios_titulo ON anuncios USING GIN (to_tsvector('spanish', titulo));
 
 -- "Mis anuncios" y filtro por cantón.
-CREATE INDEX IF NOT EXISTS idx_anuncios_autor ON anuncios (autor_usuario_id, creado_en DESC);
+-- Incluye id DESC para casar exacto con el ORDER BY / cursor de GET /api/anuncios/mios.
+CREATE INDEX IF NOT EXISTS idx_anuncios_autor ON anuncios (autor_usuario_id, creado_en DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_anuncios_geo   ON anuncios (canton_codigo, publicado_en DESC);
 CREATE INDEX IF NOT EXISTS idx_anuncios_categoria ON anuncios (categoria_id);
 
