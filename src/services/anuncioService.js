@@ -213,6 +213,19 @@ const aItemFeed = (fila, base) => ({
     slug: fila.slug,
     pilar: fila.pilar,
     titulo: fila.titulo,
+    // El listado lleva la descripción, las fotos y los contadores porque la vista
+    // de lista muestra la publicación completa: sin esto, entrar en lista
+    // obligaría a abrir el anuncio uno por uno para saber qué vendía.
+    descripcion: fila.descripcion,
+    fotos: (fila.fotos || []).map((f) => ({
+        id: Number(f.id),
+        url: urlFoto(base, f.storage_key),
+        ancho: f.ancho,
+        alto: f.alto,
+        orden: f.orden,
+    })),
+    vistas: Number(fila.vistas),
+    contactos: Number(fila.contactos),
     precio: fila.precio,
     moneda: fila.moneda,
     ubicacion: fila.canton_nombre,

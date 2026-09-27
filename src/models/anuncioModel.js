@@ -188,6 +188,19 @@ const incrementarContactos = async (id) => {
     return rowCount > 0;
 };
 
+// Todas las fotos del anuncio en un solo array, para que la vista de lista
+// pueda mostrarla sin pedir el anuncio uno por uno. Es un subselect correlacionado
+// (no un JOIN) porque un JOIN traería una fila por foto y rompería la paginación
+// por cursor, que cuenta filas.
+const FOTOS_JSON = `COALESCE((
+        SELECT json_agg(json_build_object(
+                   'id', f.id, 'storage_key', f.storage_key,
+                   'ancho', f.ancho, 'alto', f.alto, 'orden', f.orden
+               ) ORDER BY f.orden)
+        FROM anuncio_fotos f
+        WHERE f.anuncio_id = a.id
+    ), '[]'::json) AS fotos`;
+
 // Feed público con paginación por cursor (keyset).
 // orden 'recientes': (publicado_en DESC, id DESC). orden 'cercanos': (distancia ASC, id ASC).
 const feed = async (f) => {
@@ -227,7 +240,7 @@ const feed = async (f) => {
 
     const sql = `
         SELECT * FROM (
-            ${SELECT_BASE.replace('SELECT a.*,', `SELECT a.*, ${distancia} AS distancia_km,`)}
+            ${SELECT_BASE.replace('SELECT a.*,', `SELECT a.*, ${distancia} AS distancia_km, ${FOTOS_JSON},`)}
             WHERE ${where.join(' AND ')}
         ) t
         ${filtrosExternos.length ? `WHERE ${filtrosExternos.join(' AND ')}` : ''}
