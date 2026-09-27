@@ -36,7 +36,14 @@ const crear = async (req, res, next) => {
 
 const listar = async (req, res, next) => {
     try {
-        const resultado = await anuncioService.listarFeed({ query: req.query, base: baseUrl(req) });
+        const resultado = await anuncioService.listarFeed({
+            query: req.query,
+            // Opcional a propósito: el feed se puede ver sin iniciar sesión, y
+            // quien sí lo está solo necesita que el Backend sepa cuáles de los
+            // anuncios son suyos para marcarlo.
+            usuarioId: req.usuario?.id || null,
+            base: baseUrl(req),
+        });
         res.json(resultado);
     } catch (err) {
         next(err);

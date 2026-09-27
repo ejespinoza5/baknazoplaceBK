@@ -432,7 +432,7 @@ const paginar = (filas, limite, orden) => {
     };
 };
 
-const listarFeed = async ({ query, base }) => {
+const listarFeed = async ({ query, usuarioId, base }) => {
     const orden = query.orden || 'recientes';
     if (!['recientes', 'cercanos'].includes(orden)) throw error("Parámetro 'orden' inválido", 400);
 
@@ -471,7 +471,14 @@ const listarFeed = async ({ query, base }) => {
 
     const { filas: pagina, pagina: infoPagina } = paginar(filas, limite, orden);
     return {
-        items: pagina.map((f) => aItemFeed(f, base)),
+        // El Feed lleva `esMio` para que la lista no le ofrezca al dueño un chat
+        // con su propio anuncio. Sin sesión sale false, que es lo mismo que no
+        // saberlo: en ese caso la lista tampoco tiene un botón de chat que
+        // aparezca solo en tu caso.
+        items: pagina.map((f) => ({
+            ...aItemFeed(f, base),
+            esMio: Boolean(usuarioId) && f.autor_usuario_id === usuarioId,
+        })),
         pagina: infoPagina,
     };
 };
