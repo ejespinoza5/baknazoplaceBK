@@ -34,6 +34,10 @@ CREATE TABLE usuarios (
     correo_verificado BOOLEAN NOT NULL DEFAULT FALSE,
     correo_verificado_en TIMESTAMPTZ,
     ultimo_acceso_en TIMESTAMPTZ,
+    -- Teléfono personal en E.164 (+593991234567). Nunca viaja en los listados:
+    -- solo lo entrega POST /api/anuncios/:id/contacto a un usuario con sesión.
+    telefono VARCHAR(20),
+    mostrar_telefono BOOLEAN NOT NULL DEFAULT FALSE,
     creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -698,6 +702,9 @@ CREATE TABLE IF NOT EXISTS anuncios (
     vistas            INT NOT NULL DEFAULT 0,
     contactos         INT NOT NULL DEFAULT 0,
 
+    -- El dueño decide por anuncio si se puede pedir su número.
+    mostrar_telefono  BOOLEAN NOT NULL DEFAULT FALSE,
+
     publicado_en      TIMESTAMPTZ,
     expira_en         TIMESTAMPTZ,
     creado_en         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -776,6 +783,18 @@ CREATE TABLE IF NOT EXISTS anuncio_idempotencia (
     anuncio_id  BIGINT      NOT NULL REFERENCES anuncios(id) ON DELETE CASCADE,
     creado_en   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (usuario_id, clave)
+);
+
+
+-- ------------------------------------------------------------
+-- Quién pidió el número de qué anuncio. Sirve para que el contador
+-- 'contactos' sume una sola vez por (anuncio, usuario) cada hora.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS anuncio_contactos (
+    anuncio_id  BIGINT      NOT NULL REFERENCES anuncios(id) ON DELETE CASCADE,
+    usuario_id  UUID        NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    ultimo_en   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (anuncio_id, usuario_id)
 );
 
 

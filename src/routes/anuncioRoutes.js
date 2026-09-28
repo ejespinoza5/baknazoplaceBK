@@ -2,8 +2,7 @@ const express = require('express');
 const router = express.Router();
 const anuncioController = require('../controllers/anuncioController');
 const { uploadFotosAnuncio } = require('../middlewares/upload');
-const { requiereAutenticacion, autenticacionOpcional } = require('../middlewares/authMiddleware');
-const { limitadorPublicacion, limitadorContacto } = require('../middlewares/rateLimiter');
+const { requiereAutenticacion, autenticacionOpcional } = require('../middlewares/authMiddleware');const { limitadorPublicacion, limitadorContacto } = require('../middlewares/rateLimiter');
 
 // Feed público
 router.get('/', anuncioController.listar);
@@ -20,7 +19,9 @@ router.get('/:id', autenticacionOpcional, anuncioController.obtener);
 router.patch('/:id', requiereAutenticacion, uploadFotosAnuncio, anuncioController.actualizar);
 router.delete('/:id', requiereAutenticacion, anuncioController.eliminar);
 
-// Contador de "contactar al vendedor" (WhatsApp, llamada...)
-router.post('/:id/contacto', limitadorContacto, autenticacionOpcional, anuncioController.registrarContacto);
+// Reveal del teléfono del vendedor (y contador de contactos). Requiere sesión:
+// es el único endpoint que devuelve un número. El límite va después de la
+// autenticación porque se cuenta por usuario, no por IP.
+router.post('/:id/contacto', requiereAutenticacion, limitadorContacto, anuncioController.revelarContacto);
 
 module.exports = router;

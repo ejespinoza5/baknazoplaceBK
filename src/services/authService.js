@@ -16,6 +16,7 @@ const emailService = require('./emailService');
 const googleAuthService = require('./googleAuthService');
 const { procesarFotoPerfil, procesarLogo, rutaAbsolutaDe } = require('./imageService');
 const { generarCodigoNumerico, hashCodigo, hashToken } = require('../utils/codigos');
+const { normalizarTelefono } = require('../utils/telefono');
 const {
     validarCorreo,
     validarContrasena,
@@ -736,6 +737,13 @@ const obtenerPerfil = async (usuarioId) => {
         actualizado_en: usuario.actualizado_en,
         proveedores,
         negocio: null,
+        // telefono sale siempre de usuarios.telefono. En una cuenta NEGOCIO puede
+        // ser null con mostrar_telefono true: el número efectivo es el del negocio.
+        contacto: {
+            telefono: usuario.telefono || null,
+            mostrar_telefono: Boolean(usuario.mostrar_telefono),
+            telefono_verificado_en: null,
+        },
     };
 
     if (usuario.tipo_cuenta === 'NEGOCIO') {
@@ -815,13 +823,49 @@ const CAMPOS_TEXTO_NEGOCIO = [
     'direccionLocal', 'telefono', 'whatsapp', 'correoContacto', 'zonaCobertura',
 ];
 
+// 422 con el mapa campo → mensaje (lo formatea el manejador de errores de app.js).
+const errorPerfil = (errores) => {
+    const err = error('No se pudo guardar el perfil.', 422);
+    err.errores = errores;
+    return err;
+};
+
+// contacto = { telefono?, mostrar_telefono? } del USUARIO. No confundir con el
+// 'telefono' del nivel superior del body, que es el del negocio.
+// Devuelve los valores finales (lo enviado sobre lo actual) y llena 'errores'.
+const validarContacto = (contacto, usuario, errores) => {
+    let telefono = usuario.telefono;
+    let mostrarTelefono = usuario.mostrar_telefono;
+
+    if (typeof contacto !== 'object' || Array.isArray(contacto)) {
+        errores.contacto = 'El contacto no tiene un formato válido.';
+        return { telefono, mostrarTelefono };
+    }
+
+    if (contacto.telefono !== undefined) {
+        const r = normalizarTelefono(contacto.telefono);
+        if (!r.ok) errores['contacto.telefono'] = 'El número no es válido.';
+        else telefono = r.valor;
+    }
+    if (contacto.mostrar_telefono !== undefined) {
+        if (typeof contacto.mostrar_telefono !== 'boolean') {
+            errores['contacto.mostrar_telefono'] = 'Debe ser true o false.';
+        } else {
+            mostrarTelefono = contacto.mostrar_telefono;
+        }
+    }
+    return { telefono, mostrarTelefono };
+};
+
 // Actualización parcial: solo cambia lo que llega; el resto se mantiene.
-// 'usuario' = { nombres?, apellidos? }, 'negocio' = campos del negocio enviados (solo NEGOCIO).
+// 'usuario' = { nombres?, apellidos? }, 'negocio' = campos del negocio enviados (solo NEGOCIO),
+// 'contacto' = { telefono?, mostrar_telefono? } del usuario (undefined = no tocar).
 // Las imágenes nuevas ya vienen procesadas por imageService.
 const actualizarPerfil = async ({
     usuarioId,
     usuario: cambiosUsuario = {},
     negocio: cambiosNegocio = {},
+    contacto,
     fotoPerfilUrl,
     eliminarFotoPerfil,
     logoUrl,
@@ -839,7 +883,8 @@ const actualizarPerfil = async ({
     if (hayCambiosNegocio && usuario.tipo_cuenta !== 'NEGOCIO') {
         throw error('Solo las cuentas de negocio pueden editar datos del negocio', 400);
     }
-    const hayCambiosUsuario = Object.keys(cambiosUsuario).length > 0 || fotoPerfilUrl || eliminarFotoPerfil;
+    const hayCambiosUsuario =
+        Object.keys(cambiosUsuario).length > 0 || fotoPerfilUrl || eliminarFotoPerfil || contacto !== undefined;
     if (!hayCambiosUsuario && !hayCambiosNegocio) {
         throw error('No se enviaron cambios', 400);
     }
@@ -891,10 +936,40 @@ const actualizarPerfil = async ({
             : usuario.correo;
     }
 
+    // --- Contacto del usuario ---
+    let telefono = usuario.telefono;
+    let mostrarTelefono = usuario.mostrar_telefono;
+    if (contacto !== undefined) {
+        const errores = {};
+        ({ telefono, mostrarTelefono } = validarContacto(contacto, usuario, errores));
+
+        // Mostrarlo solo tiene sentido si hay algún número: el propio, o el
+        // teléfono/WhatsApp del negocio (con los cambios de este mismo guardado).
+        if (!errores['contacto.telefono'] && mostrarTelefono) {
+            let negocio = negocioFinal;
+            if (!negocio && usuario.tipo_cuenta === 'NEGOCIO') {
+                const fila = await negocioModel.buscarPorUsuario(usuario.id);
+                negocio = fila ? negocioDesdeFila(fila) : null;
+            }
+            if (!telefono && !negocio?.telefono && !negocio?.whatsapp) {
+                errores['contacto.mostrar_telefono'] = 'Añade un número de teléfono para poder mostrarlo.';
+            }
+        }
+        if (Object.keys(errores).length > 0) throw errorPerfil(errores);
+    }
+
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        await usuarioModel.actualizarDatosPerfil({ usuarioId: usuario.id, nombres, apellidos, fotoPerfil, client });
+        await usuarioModel.actualizarDatosPerfil({
+            usuarioId: usuario.id,
+            nombres,
+            apellidos,
+            fotoPerfil,
+            telefono,
+            mostrarTelefono,
+            client,
+        });
         if (negocioFinal) {
             await negocioModel.actualizarPorUsuario(usuario.id, negocioFinal, client);
         }

@@ -100,13 +100,16 @@ const eliminar = async (req, res, next) => {
     }
 };
 
-const registrarContacto = async (req, res, next) => {
+const revelarContacto = async (req, res, next) => {
     try {
-        await anuncioService.registrarContacto({ id: req.params.id, usuarioId: req.usuario?.id || null });
-        res.status(204).end();
+        const resultado = await anuncioService.revelarContacto({ id: req.params.id, usuarioId: req.usuario.id });
+        // El teléfono es un dato personal: ni el navegador ni un proxy deben
+        // guardarlo, o quedaría accesible sin volver a pedir permiso.
+        res.set('Cache-Control', 'no-store');
+        res.json(resultado);
     } catch (err) {
         next(err);
     }
 };
 
-module.exports = { crear, listar, listarMios, obtener, actualizar, eliminar, registrarContacto };
+module.exports = { crear, listar, listarMios, obtener, actualizar, eliminar, revelarContacto };

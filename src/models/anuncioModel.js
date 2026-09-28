@@ -10,7 +10,11 @@ const SELECT_BASE = `
            ae.jornada, ae.modalidad,
            u.nombres AS autor_nombres, u.apellidos AS autor_apellidos,
            u.foto_perfil AS autor_foto, u.correo_verificado AS autor_verificado,
-           n.nombre_comercial AS negocio_nombre, n.logo_url AS negocio_logo, n.whatsapp AS negocio_whatsapp,
+           -- Los teléfonos solo se usan para calcular telefonoVisible y en el reveal
+           -- de contacto; los serializadores del servicio nunca los copian a la respuesta.
+           u.telefono AS autor_telefono,
+           n.nombre_comercial AS negocio_nombre, n.logo_url AS negocio_logo,
+           n.telefono AS negocio_telefono, n.whatsapp AS negocio_whatsapp,
            f0.storage_key AS portada_key, f0.ancho AS portada_ancho, f0.alto AS portada_alto
     FROM anuncios a
     JOIN categorias_anuncio c ON c.id = a.categoria_id
@@ -39,9 +43,10 @@ const insertar = async (client, d) => {
     const { rows } = await client.query(
         `INSERT INTO anuncios (
              slug, pilar, titulo, descripcion, categoria_id, provincia_codigo, canton_codigo, sector,
-             precio, latitud, longitud, autor_usuario_id, autor_negocio_id, estado, publicado_en
+             precio, latitud, longitud, autor_usuario_id, autor_negocio_id, mostrar_telefono,
+             estado, publicado_en
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'PUBLICADO',
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'PUBLICADO',
                  date_trunc('milliseconds', NOW()))
          RETURNING id`,
         [
@@ -58,6 +63,7 @@ const insertar = async (client, d) => {
             d.longitud,
             d.autorUsuarioId,
             d.autorNegocioId,
+            d.mostrarTelefono,
         ]
     );
     return rows[0].id;
@@ -152,6 +158,7 @@ const COLUMNAS_EDITABLES = {
     longitud: 'longitud',
     estado: 'estado',
     publicadoEn: 'publicado_en',
+    mostrarTelefono: 'mostrar_telefono',
 };
 
 const actualizar = async (client, id, cambios) => {
@@ -180,10 +187,21 @@ const incrementarVistas = async (id) => {
     await pool.query(`UPDATE anuncios SET vistas = vistas + 1 WHERE id = $1`, [id]);
 };
 
-const incrementarContactos = async (id) => {
+// Suma al contador una sola vez por (anuncio, usuario) cada hora. El upsert solo
+// devuelve fila si es el primer pedido o si el último fue hace más de una hora;
+// en ese caso, y solo en ese, se incrementa. Devuelve true si sumó.
+const registrarContacto = async (anuncioId, usuarioId) => {
     const { rowCount } = await pool.query(
-        `UPDATE anuncios a SET contactos = contactos + 1 WHERE a.id = $1 AND ${VISIBLE}`,
-        [id]
+        `WITH marca AS (
+             INSERT INTO anuncio_contactos (anuncio_id, usuario_id, ultimo_en)
+             VALUES ($1, $2, NOW())
+             ON CONFLICT (anuncio_id, usuario_id) DO UPDATE SET ultimo_en = NOW()
+                 WHERE anuncio_contactos.ultimo_en < NOW() - INTERVAL '1 hour'
+             RETURNING 1
+         )
+         UPDATE anuncios a SET contactos = contactos + 1
+         WHERE a.id = $1 AND ${VISIBLE} AND EXISTS (SELECT 1 FROM marca)`,
+        [anuncioId, usuarioId]
     );
     return rowCount > 0;
 };
@@ -301,7 +319,7 @@ module.exports = {
     actualizar,
     eliminarSoft,
     incrementarVistas,
-    incrementarContactos,
+    registrarContacto,
     feed,
     listarPorAutor,
     buscarIdempotencia,

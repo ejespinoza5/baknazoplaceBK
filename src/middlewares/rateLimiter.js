@@ -18,5 +18,19 @@ module.exports = {
     // Evita adivinar la contraseña actual por fuerza bruta con un token robado.
     limitadorContrasena: crearLimitador(15, 5, 'Demasiados intentos de cambio de contraseña. Intenta más tarde.'),
     limitadorPublicacion: crearLimitador(60, 30, 'Demasiadas publicaciones. Intenta más tarde.'),
-    limitadorContacto: crearLimitador(15, 60, 'Demasiadas solicitudes. Intenta más tarde.'),
+    // Pedir números de teléfono: por usuario (va detrás de requiereAutenticacion)
+    // para frenar a quien intente recolectar números de muchos anuncios.
+    limitadorContacto: rateLimit({
+        windowMs: 15 * 60 * 1000,
+        max: 30,
+        standardHeaders: true,
+        legacyHeaders: false,
+        keyGenerator: (req) => `usuario:${req.usuario.id}`,
+        // 'message' además de 'error': el texto por defecto del cliente para un 429
+        // habla de publicaciones y aquí sería engañoso.
+        message: {
+            error: 'Estás pidiendo demasiados números. Espera un momento.',
+            message: 'Estás pidiendo demasiados números. Espera un momento.',
+        },
+    }),
 };

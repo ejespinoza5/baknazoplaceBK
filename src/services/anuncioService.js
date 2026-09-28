@@ -6,6 +6,7 @@ const catalogoModel = require('../models/catalogoModel');
 const negocioModel = require('../models/negocioModel');
 const { procesarFotoAnuncio, rutaAbsolutaDeStorageKey } = require('./imageService');
 const { validarLatitud, validarLongitud } = require('../utils/validaciones');
+const { resolverContacto, telefonoLegible, enlaceWhatsapp } = require('../utils/telefono');
 const {
     PILARES,
     MAX_FOTOS,
@@ -137,6 +138,14 @@ const validarCampos = async (datos, pilar, errores, parcial) => {
         else r.precio = precio.valor;
     }
 
+    // Boolean real: viaja dentro del JSON de 'datos', así que no pasa por la
+    // conversión a texto de multipart. Al crear, si no viene, es false.
+    if (enviado('mostrarTelefono')) {
+        const valor = datos.mostrarTelefono === undefined ? false : datos.mostrarTelefono;
+        if (typeof valor !== 'boolean') errores.mostrarTelefono = 'Debe ser true o false';
+        else r.mostrarTelefono = valor;
+    }
+
     if (enviado('latitud') || enviado('longitud')) {
         const sinLat = vacio(datos.latitud);
         const sinLng = vacio(datos.longitud);
@@ -195,11 +204,31 @@ const detalleDe = (fila) => {
     return { jornada: fila.jornada, modalidad: fila.modalidad };
 };
 
+// Ningún número viaja aquí: `whatsapp` se mantiene por compatibilidad, siempre
+// null. La única forma de obtener un teléfono es POST /api/anuncios/:id/contacto.
 const autorDe = (fila, base) => ({
     nombre: fila.negocio_nombre || fila.autor_nombres,
     foto: urlPublica(base, fila.negocio_nombre ? fila.negocio_logo : fila.autor_foto),
     verificado: fila.autor_verificado,
     esNegocio: Boolean(fila.autor_negocio_id),
+    whatsapp: null,
+});
+
+const estaVisible = (fila) =>
+    fila.estado === 'PUBLICADO' && !fila.eliminado_en && (!fila.expira_en || new Date(fila.expira_en) > new Date());
+
+const contactoDe = (fila) =>
+    resolverContacto({
+        usuarioTelefono: fila.autor_telefono,
+        negocioTelefono: fila.negocio_telefono,
+        negocioWhatsapp: fila.negocio_whatsapp,
+    });
+
+// mostrarTelefono = lo que eligió el dueño (columna del anuncio).
+// telefonoVisible = si un desconocido puede pedir el número ahora mismo.
+const camposTelefono = (fila) => ({
+    mostrarTelefono: fila.mostrar_telefono,
+    telefonoVisible: fila.mostrar_telefono && estaVisible(fila) && contactoDe(fila) !== null,
 });
 
 const portadaDe = (fila, base) =>
@@ -236,6 +265,7 @@ const aItemFeed = (fila, base) => ({
     categoria: categoriaDe(fila),
     detalle: detalleDe(fila),
     publicadoEn: fila.publicado_en,
+    ...camposTelefono(fila),
     autor: autorDe(fila, base),
 });
 
@@ -264,10 +294,10 @@ const aAnuncio = (fila, fotos, base, esMio) => {
         publicadoEn: fila.publicado_en,
         creadoEn: fila.creado_en,
         actualizadoEn: fila.actualizado_en,
+        ...camposTelefono(fila),
         autor: autorDe(fila, base),
         esMio: Boolean(esMio),
     };
-    if (fila.negocio_whatsapp) anuncio.autor.whatsapp = fila.negocio_whatsapp;
     if (esMio) {
         // Solo el dueño ve sus coordenadas y el motivo de rechazo.
         anuncio.latitud = fila.latitud === null ? null : Number(fila.latitud);
@@ -368,7 +398,7 @@ const obtener = async ({ idOSlug, usuarioId, base }) => {
     if (!fila || fila.eliminado_en) throw error('Anuncio no encontrado', 404);
 
     const esMio = Boolean(usuarioId) && fila.autor_usuario_id === usuarioId;
-    const visible = fila.estado === 'PUBLICADO' && (!fila.expira_en || new Date(fila.expira_en) > new Date());
+    const visible = estaVisible(fila);
     if (!visible && !esMio) throw error('Anuncio no encontrado', 404);
 
     if (visible && !esMio) {
@@ -606,13 +636,30 @@ const eliminar = async ({ id, usuarioId }) => {
     await anuncioModel.eliminarSoft(id);
 };
 
-const registrarContacto = async ({ id, usuarioId }) => {
+// Reveal del teléfono: el único punto de la API que devuelve un número.
+// "No hay número" es una respuesta 200 con disponible: false, no un error.
+const revelarContacto = async ({ id, usuarioId }) => {
     if (!/^\d+$/.test(String(id))) throw error('Anuncio no encontrado', 404);
     const fila = await anuncioModel.buscarPorId(id);
-    if (!fila) throw error('Anuncio no encontrado', 404);
-    if (usuarioId && fila.autor_usuario_id === usuarioId) return; // el dueño no cuenta
-    const ok = await anuncioModel.incrementarContactos(id);
-    if (!ok) throw error('Anuncio no encontrado', 404);
+    if (!fila || fila.eliminado_en) throw error('Anuncio no encontrado', 404);
+
+    if (fila.autor_usuario_id === usuarioId) return { disponible: false, motivo: 'ES_PROPIO' };
+
+    // Apagado por el dueño, sin número, o anuncio pausado/no publicado.
+    const contacto = fila.mostrar_telefono && estaVisible(fila) ? contactoDe(fila) : null;
+    if (!contacto) return { disponible: false, motivo: 'SIN_NUMERO' };
+
+    const contado = await anuncioModel.registrarContacto(fila.id, usuarioId);
+
+    return {
+        disponible: true,
+        telefono: contacto.telefono,
+        telefonoLegible: telefonoLegible(contacto.telefono),
+        whatsapp: contacto.whatsapp,
+        enlaceWhatsapp: enlaceWhatsapp(contacto.whatsapp, fila.titulo),
+        origen: contacto.origen,
+        contado,
+    };
 };
 
 module.exports = {
@@ -622,5 +669,5 @@ module.exports = {
     listarMios,
     actualizar,
     eliminar,
-    registrarContacto,
+    revelarContacto,
 };

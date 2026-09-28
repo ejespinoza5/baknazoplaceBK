@@ -311,6 +311,7 @@ const conUrlsAbsolutas = (req, usuario) => {
 const perfil = async (req, res, next) => {
     try {
         const usuario = await authService.obtenerPerfil(req.usuario.id);
+        res.set('Cache-Control', 'no-store');
         res.json({ usuario: conUrlsAbsolutas(req, usuario) });
     } catch (err) {
         next(err);
@@ -350,6 +351,9 @@ const actualizarPerfil = async (req, res, next) => {
         const body = req.body || {};
 
         const negocio = cambiosNegocio(body);
+        // Contacto del usuario (no el 'telefono' del negocio del nivel superior).
+        // En JSON llega como objeto; en multipart, como string JSON. null = no tocar.
+        const contacto = body.contacto !== undefined ? parsearJson(body.contacto, 'contacto') ?? undefined : undefined;
         if (archivos.logo?.[0] && req.usuario.tipo_cuenta !== 'NEGOCIO') {
             return res.status(400).json({ error: 'Solo las cuentas de negocio pueden tener logo' });
         }
@@ -365,12 +369,15 @@ const actualizarPerfil = async (req, res, next) => {
             usuarioId: req.usuario.id,
             usuario: soloEnviados({ nombres: body.nombres, apellidos: body.apellidos }),
             negocio,
+            contacto,
             fotoPerfilUrl,
             eliminarFotoPerfil: booleano(body.eliminar_foto_perfil),
             logoUrl,
             eliminarLogo: booleano(body.eliminar_logo),
         });
-        res.json({ mensaje: 'Perfil actualizado', usuario: conUrlsAbsolutas(req, usuario) });
+        // Lleva el teléfono personal: que no quede en ninguna caché.
+        res.set('Cache-Control', 'no-store');
+        res.json({ mensaje: 'Perfil actualizado.', usuario: conUrlsAbsolutas(req, usuario) });
     } catch (err) {
         // Si algo falla, se borran las imágenes nuevas que ya se guardaron.
         for (const url of [fotoPerfilUrl, logoUrl]) {

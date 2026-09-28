@@ -41,11 +41,13 @@ const marcarCorreoVerificado = async (usuarioId) => {
 };
 
 // 'client' permite ejecutarlo dentro de la transacción de edición de perfil.
-const actualizarDatosPerfil = async ({ usuarioId, nombres, apellidos, fotoPerfil, client }) => {
+const actualizarDatosPerfil = async ({ usuarioId, nombres, apellidos, fotoPerfil, telefono, mostrarTelefono, client }) => {
     const db = client || pool;
     await db.query(
-        `UPDATE usuarios SET nombres = $2, apellidos = $3, foto_perfil = $4 WHERE id = $1`,
-        [usuarioId, nombres, apellidos, fotoPerfil]
+        `UPDATE usuarios
+         SET nombres = $2, apellidos = $3, foto_perfil = $4, telefono = $5, mostrar_telefono = $6
+         WHERE id = $1`,
+        [usuarioId, nombres, apellidos, fotoPerfil, telefono, mostrarTelefono]
     );
 };
 
