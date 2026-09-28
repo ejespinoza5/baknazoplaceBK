@@ -157,7 +157,13 @@ const iniciarSesion = async (req, res, next) => {
 
 const refrescarToken = async (req, res, next) => {
     try {
-        const resultado = await authService.refrescarToken({ refresh_token: leerRefreshToken(req) });
+        const refresh_token = leerRefreshToken(req);
+        // El frontend llama aquí al abrir la app para saber si hay sesión: sin
+        // cookie la respuesta es "no hay sesión", no un error de la petición.
+        if (!refresh_token) {
+            return res.status(401).json({ error: 'No hay sesión iniciada' });
+        }
+        const resultado = await authService.refrescarToken({ refresh_token });
         responderConSesion(res, resultado, leerPersistente(req));
     } catch (err) {
         // Cookie ausente, caducada o revocada: se borra para no reintentar con ella.
