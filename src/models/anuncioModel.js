@@ -15,7 +15,8 @@ const SELECT_BASE = `
            u.telefono AS autor_telefono,
            n.nombre_comercial AS negocio_nombre, n.logo_url AS negocio_logo,
            n.telefono AS negocio_telefono, n.whatsapp AS negocio_whatsapp,
-           f0.storage_key AS portada_key, f0.ancho AS portada_ancho, f0.alto AS portada_alto
+           f0.storage_key AS portada_key, f0.ancho AS portada_ancho, f0.alto AS portada_alto,
+           (SELECT COUNT(*) FROM anuncio_likes l WHERE l.anuncio_id = a.id)::int AS likes
     FROM anuncios a
     JOIN categorias_anuncio c ON c.id = a.categoria_id
     JOIN cantones ca ON ca.codigo = a.canton_codigo
@@ -159,6 +160,9 @@ const COLUMNAS_EDITABLES = {
     estado: 'estado',
     publicadoEn: 'publicado_en',
     mostrarTelefono: 'mostrar_telefono',
+    vendido: 'vendido',
+    // Lo pone el servicio junto con 'vendido', nunca el cliente.
+    vendidoEn: 'vendido_en',
 };
 
 const actualizar = async (client, id, cambios) => {
@@ -228,7 +232,9 @@ const feed = async (f) => {
         return `$${valores.length}`;
     };
 
-    const where = [VISIBLE];
+    // Los vendidos siguen visibles en su detalle, pero no en el feed. Debe
+    // coincidir con el predicado del índice parcial idx_anuncios_feed.
+    const where = [VISIBLE, 'NOT a.vendido'];
     if (f.pilar) where.push(`a.pilar = ${p(f.pilar)}`);
     if (f.categoriaId) where.push(`a.categoria_id = ${p(f.categoriaId)}`);
     if (f.cantonCodigo) where.push(`a.canton_codigo = ${p(f.cantonCodigo)}`);
@@ -285,6 +291,44 @@ const listarPorAutor = async ({ usuarioId, estado, cursor, limite }) => {
     return rows;
 };
 
+// ---------- Me gusta ----------
+
+// Idempotente: si el like ya existía no pasa nada, y el total no se duplica.
+const darLike = async (anuncioId, usuarioId) => {
+    await pool.query(
+        `INSERT INTO anuncio_likes (anuncio_id, usuario_id) VALUES ($1, $2)
+         ON CONFLICT DO NOTHING`,
+        [anuncioId, usuarioId]
+    );
+};
+
+const quitarLike = async (anuncioId, usuarioId) => {
+    await pool.query(`DELETE FROM anuncio_likes WHERE anuncio_id = $1 AND usuario_id = $2`, [anuncioId, usuarioId]);
+};
+
+// Total y si este usuario le dio me gusta, en una sola consulta (tras el
+// INSERT/DELETE, para que el total refleje el cambio).
+const estadoLike = async (anuncioId, usuarioId) => {
+    const { rows } = await pool.query(
+        `SELECT
+             (SELECT COUNT(*) FROM anuncio_likes WHERE anuncio_id = $1)::int AS likes,
+             EXISTS (SELECT 1 FROM anuncio_likes WHERE anuncio_id = $1 AND usuario_id = $2) AS me_gusta`,
+        [anuncioId, usuarioId]
+    );
+    return { meGusta: rows[0].me_gusta, likes: rows[0].likes };
+};
+
+// De los ids de una página, a cuáles les dio me gusta el usuario: una consulta
+// para toda la página en vez de una por anuncio.
+const idsConLike = async (usuarioId, anuncioIds) => {
+    if (!usuarioId || anuncioIds.length === 0) return new Set();
+    const { rows } = await pool.query(
+        `SELECT anuncio_id FROM anuncio_likes WHERE usuario_id = $1 AND anuncio_id = ANY($2::bigint[])`,
+        [usuarioId, anuncioIds]
+    );
+    return new Set(rows.map((r) => String(r.anuncio_id)));
+};
+
 // ---------- Idempotencia ----------
 
 const buscarIdempotencia = async (usuarioId, clave) => {
@@ -322,6 +366,10 @@ module.exports = {
     registrarContacto,
     feed,
     listarPorAutor,
+    darLike,
+    quitarLike,
+    estadoLike,
+    idsConLike,
     buscarIdempotencia,
     registrarIdempotencia,
 };

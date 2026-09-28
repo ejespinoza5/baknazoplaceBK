@@ -112,4 +112,20 @@ const revelarContacto = async (req, res, next) => {
     }
 };
 
-module.exports = { crear, listar, listarMios, obtener, actualizar, eliminar, revelarContacto };
+const darLike = async (req, res, next) => {
+    try {
+        res.json(await anuncioService.darLike({ id: req.params.id, usuarioId: req.usuario.id }));
+    } catch (err) {
+        next(err);
+    }
+};
+
+const quitarLike = async (req, res, next) => {
+    try {
+        res.json(await anuncioService.quitarLike({ id: req.params.id, usuarioId: req.usuario.id }));
+    } catch (err) {
+        next(err);
+    }
+};
+
+module.exports = { crear, listar, listarMios, obtener, actualizar, eliminar, revelarContacto, darLike, quitarLike };

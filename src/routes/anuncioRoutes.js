@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const anuncioController = require('../controllers/anuncioController');
 const { uploadFotosAnuncio } = require('../middlewares/upload');
-const { requiereAutenticacion, autenticacionOpcional } = require('../middlewares/authMiddleware');const { limitadorPublicacion, limitadorContacto } = require('../middlewares/rateLimiter');
+const { requiereAutenticacion, autenticacionOpcional } = require('../middlewares/authMiddleware');const { limitadorPublicacion, limitadorContacto, limitadorLike } = require('../middlewares/rateLimiter');
 
 // Feed público
 router.get('/', anuncioController.listar);
@@ -23,5 +23,10 @@ router.delete('/:id', requiereAutenticacion, anuncioController.eliminar);
 // es el único endpoint que devuelve un número. El límite va después de la
 // autenticación porque se cuenta por usuario, no por IP.
 router.post('/:id/contacto', requiereAutenticacion, limitadorContacto, anuncioController.revelarContacto);
+
+// Me gusta. DELETE va a /likes/me y no a /likes: el usuario lo pone el token,
+// nunca la URL, así que nadie puede quitar el like de otro.
+router.post('/:id/likes', requiereAutenticacion, limitadorLike, anuncioController.darLike);
+router.delete('/:id/likes/me', requiereAutenticacion, limitadorLike, anuncioController.quitarLike);
 
 module.exports = router;

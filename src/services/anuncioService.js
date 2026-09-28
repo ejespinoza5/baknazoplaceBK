@@ -226,9 +226,18 @@ const contactoDe = (fila) =>
 
 // mostrarTelefono = lo que eligió el dueño (columna del anuncio).
 // telefonoVisible = si un desconocido puede pedir el número ahora mismo.
+// Un vendido ya no se vende: no se ofrece el número aunque el dueño lo tenga activo.
 const camposTelefono = (fila) => ({
     mostrarTelefono: fila.mostrar_telefono,
-    telefonoVisible: fila.mostrar_telefono && estaVisible(fila) && contactoDe(fila) !== null,
+    telefonoVisible: fila.mostrar_telefono && !fila.vendido && estaVisible(fila) && contactoDe(fila) !== null,
+});
+
+// meGusta depende de quién mira: lo calcula quien llama (false sin sesión).
+const camposVenta = (fila, meGusta) => ({
+    vendido: fila.vendido,
+    vendidoEn: fila.vendido_en,
+    likes: Number(fila.likes),
+    meGusta: Boolean(meGusta),
 });
 
 const portadaDe = (fila, base) =>
@@ -237,7 +246,7 @@ const portadaDe = (fila, base) =>
 const categoriaDe = (fila) => ({ id: fila.categoria_id, slug: fila.categoria_slug, nombre: fila.categoria_nombre });
 
 // Tarjeta del feed. Las coordenadas exactas nunca se exponen: solo la distancia.
-const aItemFeed = (fila, base) => ({
+const aItemFeed = (fila, base, meGusta) => ({
     id: Number(fila.id),
     slug: fila.slug,
     pilar: fila.pilar,
@@ -265,12 +274,13 @@ const aItemFeed = (fila, base) => ({
     categoria: categoriaDe(fila),
     detalle: detalleDe(fila),
     publicadoEn: fila.publicado_en,
+    ...camposVenta(fila, meGusta),
     ...camposTelefono(fila),
     autor: autorDe(fila, base),
 });
 
 // Anuncio completo (detalle, respuesta de crear/editar).
-const aAnuncio = (fila, fotos, base, esMio) => {
+const aAnuncio = (fila, fotos, base, esMio, meGusta = false) => {
     const anuncio = {
         id: Number(fila.id),
         slug: fila.slug,
@@ -294,6 +304,7 @@ const aAnuncio = (fila, fotos, base, esMio) => {
         publicadoEn: fila.publicado_en,
         creadoEn: fila.creado_en,
         actualizadoEn: fila.actualizado_en,
+        ...camposVenta(fila, meGusta),
         ...camposTelefono(fila),
         autor: autorDe(fila, base),
         esMio: Boolean(esMio),
@@ -406,7 +417,8 @@ const obtener = async ({ idOSlug, usuarioId, base }) => {
     }
 
     const fotos = await anuncioModel.listarFotos(fila.id);
-    return aAnuncio(fila, fotos, base, esMio);
+    const conLike = await anuncioModel.idsConLike(usuarioId, [fila.id]);
+    return aAnuncio(fila, fotos, base, esMio, conLike.has(String(fila.id)));
 };
 
 // ---------- Feed ----------
@@ -500,13 +512,14 @@ const listarFeed = async ({ query, usuarioId, base }) => {
     });
 
     const { filas: pagina, pagina: infoPagina } = paginar(filas, limite, orden);
+    const conLike = await anuncioModel.idsConLike(usuarioId, pagina.map((f) => f.id));
     return {
         // El Feed lleva `esMio` para que la lista no le ofrezca al dueño un chat
         // con su propio anuncio. Sin sesión sale false, que es lo mismo que no
         // saberlo: en ese caso la lista tampoco tiene un botón de chat que
         // aparezca solo en tu caso.
         items: pagina.map((f) => ({
-            ...aItemFeed(f, base),
+            ...aItemFeed(f, base, conLike.has(String(f.id))),
             esMio: Boolean(usuarioId) && f.autor_usuario_id === usuarioId,
         })),
         pagina: infoPagina,
@@ -527,9 +540,11 @@ const listarMios = async ({ usuarioId, query, base }) => {
     });
 
     const { filas: pagina, pagina: infoPagina } = paginar(filas, limite, 'mios');
+    // Nadie puede dar me gusta a lo suyo, así que meGusta aquí es siempre false.
     return {
         items: pagina.map((f) => ({
-            ...aItemFeed(f, base),
+            ...aItemFeed(f, base, false),
+            esMio: true,
             estado: f.estado,
             vistas: f.vistas,
             contactos: f.contactos,
@@ -578,6 +593,17 @@ const actualizar = async ({ id, usuarioId, datos, archivos, base }) => {
         } else if (datos.estado !== actual.estado) {
             cambios.estado = datos.estado;
             if (datos.estado === 'PUBLICADO' && !actual.publicado_en) cambios.publicadoEn = new Date();
+        }
+    }
+
+    if (datos.vendido !== undefined) {
+        if (typeof datos.vendido !== 'boolean') {
+            errores.vendido = 'Debe ser true o false';
+        } else if (datos.vendido !== actual.vendido) {
+            cambios.vendido = datos.vendido;
+            // El CHECK de la tabla exige que vayan juntos; además es el único
+            // registro de cuándo se cerró la venta.
+            cambios.vendidoEn = datos.vendido ? new Date() : null;
         }
     }
 
@@ -646,7 +672,9 @@ const revelarContacto = async ({ id, usuarioId }) => {
     if (fila.autor_usuario_id === usuarioId) return { disponible: false, motivo: 'ES_PROPIO' };
 
     // Apagado por el dueño, sin número, o anuncio pausado/no publicado.
-    const contacto = fila.mostrar_telefono && estaVisible(fila) ? contactoDe(fila) : null;
+    // Sin '!fila.vendido' el botón desaparecería pero la llamada directa seguiría
+    // entregando el número.
+    const contacto = fila.mostrar_telefono && !fila.vendido && estaVisible(fila) ? contactoDe(fila) : null;
     if (!contacto) return { disponible: false, motivo: 'SIN_NUMERO' };
 
     const contado = await anuncioModel.registrarContacto(fila.id, usuarioId);
@@ -662,6 +690,33 @@ const revelarContacto = async ({ id, usuarioId }) => {
     };
 };
 
+// ---------- Me gusta ----------
+
+// Dar y quitar responden lo mismo: { meGusta, likes }, para que el cliente pinte
+// el pulgar y el número sin adivinar ninguno de los dos.
+const darLike = async ({ id, usuarioId }) => {
+    if (!/^\d+$/.test(String(id))) throw error('Anuncio no encontrado', 404);
+    const fila = await anuncioModel.buscarPorId(id);
+    // Un pausado o no publicado no existe para quien no es el dueño (como en el detalle).
+    if (!fila || !estaVisible(fila)) throw error('Anuncio no encontrado', 404);
+    if (fila.autor_usuario_id === usuarioId) throw error('No puedes dar me gusta a tu propio anuncio', 403);
+    if (fila.vendido) throw error('Este anuncio ya se vendió', 403);
+
+    await anuncioModel.darLike(fila.id, usuarioId);
+    return anuncioModel.estadoLike(fila.id, usuarioId);
+};
+
+// Quitar se permite aunque el anuncio ya se haya vendido o pausado: retirar un
+// like propio nunca debería fallar mientras el anuncio exista.
+const quitarLike = async ({ id, usuarioId }) => {
+    if (!/^\d+$/.test(String(id))) throw error('Anuncio no encontrado', 404);
+    const fila = await anuncioModel.buscarPorId(id);
+    if (!fila || fila.eliminado_en) throw error('Anuncio no encontrado', 404);
+
+    await anuncioModel.quitarLike(fila.id, usuarioId);
+    return anuncioModel.estadoLike(fila.id, usuarioId);
+};
+
 module.exports = {
     crear,
     obtener,
@@ -670,4 +725,6 @@ module.exports = {
     actualizar,
     eliminar,
     revelarContacto,
+    darLike,
+    quitarLike,
 };

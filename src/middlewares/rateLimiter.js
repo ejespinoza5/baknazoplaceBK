@@ -33,4 +33,16 @@ module.exports = {
             message: 'Estás pidiendo demasiados números. Espera un momento.',
         },
     }),
+    // Dar/quitar me gusta: por usuario, igual que el de contacto.
+    limitadorLike: rateLimit({
+        windowMs: 15 * 60 * 1000,
+        max: 60,
+        standardHeaders: true,
+        legacyHeaders: false,
+        keyGenerator: (req) => `usuario:${req.usuario.id}`,
+        message: {
+            error: 'Estás dando demasiados me gusta. Espera un momento.',
+            message: 'Estás dando demasiados me gusta. Espera un momento.',
+        },
+    }),
 };

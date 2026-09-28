@@ -705,6 +705,12 @@ CREATE TABLE IF NOT EXISTS anuncios (
     -- El dueño decide por anuncio si se puede pedir su número.
     mostrar_telefono  BOOLEAN NOT NULL DEFAULT FALSE,
 
+    -- Ya se vendió. NO es un estado a propósito: un anuncio puede estar pausado y
+    -- vendido a la vez, y con un solo 'estado' se perdería una de las dos cosas.
+    -- Viaja aparte y el feed lo excluye con 'AND NOT vendido'.
+    vendido           BOOLEAN NOT NULL DEFAULT FALSE,
+    vendido_en        TIMESTAMPTZ,
+
     publicado_en      TIMESTAMPTZ,
     expira_en         TIMESTAMPTZ,
     creado_en         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -716,7 +722,11 @@ CREATE TABLE IF NOT EXISTS anuncios (
     -- Coordenadas: las dos o ninguna.
     CONSTRAINT coordenadas_completas CHECK ((latitud IS NULL) = (longitud IS NULL)),
     -- Eliminado <=> tiene fecha de eliminación.
-    CONSTRAINT eliminado_con_fecha CHECK ((estado = 'ELIMINADO') = (eliminado_en IS NOT NULL))
+    CONSTRAINT eliminado_con_fecha CHECK ((estado = 'ELIMINADO') = (eliminado_en IS NOT NULL)),
+    -- Vendido <=> tiene fecha de venta. Mismo patrón que el de eliminado: sin
+    -- esto se puede marcar vendido sin fecha, y el backend no sabría desde
+    -- cuándo hiding en el feed.
+    CONSTRAINT vendido_con_fecha CHECK (vendido = (vendido_en IS NOT NULL))
 );
 
 DO $$
@@ -799,11 +809,44 @@ CREATE TABLE IF NOT EXISTS anuncio_contactos (
 
 
 -- ------------------------------------------------------------
+-- Quién le dio like a qué anuncio.
+--
+-- Calcada de 'anuncio_contactos' a propósito. La clave primaria compuesta es lo
+-- que hace gratis las dos cosas que importan: que nadie pueda dar dos likes al
+-- mismo anuncio, y que no haga falta una columna 'me_gusta' en 'anuncios' que
+-- pueda desincronizarse de las filas.
+--
+-- No lleva contador 'likes INT' en anuncios a diferencia de 'vistas' y
+-- 'contactos'. Esos dos se suben con una llamada cada vez y no se leen con el
+-- anuncio; los likes se piden siempre junto al anuncio, y COUNT(*) agrupado de
+-- los ids de una página es una consulta más y siempre exacto. Un contador
+-- desnormalizado solo añade formas de que se desvíe de la verdad.
+--
+-- Exige sesión: un like tiene que ser atribuible a alguien, o el mismo usuario
+-- puede repetirlo mil veces y el contador no significa nada.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS anuncio_likes (
+    anuncio_id  BIGINT      NOT NULL REFERENCES anuncios(id) ON DELETE CASCADE,
+    usuario_id  UUID        NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    creado_en   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (anuncio_id, usuario_id)
+);
+
+
+-- ------------------------------------------------------------
 -- Índices
 -- ------------------------------------------------------------
--- El feed: filtrado por pilar y ordenado por fecha. Parcial: no paga por borradores.
+-- El feed: filtrado por pilar y ordenado por fecha. Parcial: no paga por borradores
+-- ni por los ya vendidos, que es el caso más común de un marketplace maduro.
+--
+-- OJO: si la base ya tenía este índice sin `AND NOT vendido`, hay que rehacerlo
+-- con DROP primero. Un índice parcial que no cubre el WHERE de la consulta no
+-- está simplemente inútil: PostgreSQL lo ignora y filtra fila por fila en cada
+-- petición al feed, que es justo lo que pasa cuando el filtro y el índice no
+-- coinciden.
+DROP INDEX IF EXISTS idx_anuncios_feed;
 CREATE INDEX IF NOT EXISTS idx_anuncios_feed ON anuncios (pilar, publicado_en DESC, id DESC)
-    WHERE estado = 'PUBLICADO' AND eliminado_en IS NULL;
+    WHERE estado = 'PUBLICADO' AND eliminado_en IS NULL AND NOT vendido;
 
 -- Búsqueda por texto.
 CREATE INDEX IF NOT EXISTS idx_anuncios_titulo ON anuncios USING GIN (to_tsvector('spanish', titulo));
@@ -815,3 +858,11 @@ CREATE INDEX IF NOT EXISTS idx_anuncios_geo   ON anuncios (canton_codigo, public
 CREATE INDEX IF NOT EXISTS idx_anuncios_categoria ON anuncios (categoria_id);
 
 CREATE INDEX IF NOT EXISTS idx_anuncio_fotos_anuncio ON anuncio_fotos (anuncio_id, orden);
+
+-- Los likes de un anuncio concreto, para la cuenta y para el INSERT/DELETE.
+-- La PK compuesta ya cubre `WHERE anuncio_id = ?` porque va su columna primera,
+-- así que este índice solo hace falta si se cuenta por anuncio muy a menudo.
+-- CREATE INDEX IF NOT EXISTS idx_anuncio_likes_anuncio ON anuncio_likes (anuncio_id);
+
+-- "Mis anuncios" ordenado por fecha, para no escanear los vendidos.
+CREATE INDEX IF NOT EXISTS idx_anuncios_venta ON anuncios (autor_usuario_id, vendido);
