@@ -2,10 +2,12 @@ const express = require('express');
 const router = express.Router();
 const anuncioController = require('../controllers/anuncioController');
 const { uploadFotosAnuncio } = require('../middlewares/upload');
-const { requiereAutenticacion, autenticacionOpcional } = require('../middlewares/authMiddleware');const { limitadorPublicacion, limitadorContacto, limitadorLike } = require('../middlewares/rateLimiter');
+const { requiereAutenticacion, autenticacionOpcional } = require('../middlewares/authMiddleware');
+const { limitadorPublicacion, limitadorContacto, limitadorLike } = require('../middlewares/rateLimiter');
 
-// Feed público
-router.get('/', anuncioController.listar);
+// Feed público. La sesión es opcional: sin token se ve igual, y con token el
+// backend sabe a qué anuncios les diste me gusta (meGusta) y cuáles son tuyos (esMio).
+router.get('/', autenticacionOpcional, anuncioController.listar);
 
 // "Mis anuncios" (va antes de '/:id' para que 'mios' no se tome como id)
 router.get('/mios', requiereAutenticacion, anuncioController.listarMios);
