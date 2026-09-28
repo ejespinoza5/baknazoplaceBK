@@ -20,6 +20,11 @@ const env = {
     jwtRefreshExpiresDias: Number(process.env.JWT_REFRESH_EXPIRES_DIAS || 30),
     bcryptRounds: Number(process.env.BCRYPT_ROUNDS || 12),
     corsOrigin: (process.env.CORS_ORIGIN || '').split(',').map((o) => o.trim()).filter(Boolean),
+    // Cookie del refresh token. 'lax' sirve cuando frontend y API comparten dominio
+    // (o en local con localhost). Si están en sitios distintos (p. ej. dos
+    // subdominios de duckdns.org) hace falta 'none', que obliga a secure=true.
+    cookieSameSite: (process.env.COOKIE_SAMESITE || 'lax').toLowerCase(),
+    cookieSecure: process.env.COOKIE_SECURE !== 'false',
     google: {
         clientId: process.env.GOOGLE_CLIENT_ID || null,
     },
@@ -42,6 +47,15 @@ if (!env.google.clientId) {
 }
 if (!env.smtp.host) {
     console.warn('[config] SMTP no configurado: los códigos de verificación/recuperación se mostrarán solo en consola.');
+}
+
+if (!['strict', 'lax', 'none'].includes(env.cookieSameSite)) {
+    console.error('COOKIE_SAMESITE debe ser strict, lax o none');
+    process.exit(1);
+}
+if (env.cookieSameSite === 'none' && !env.cookieSecure) {
+    console.error('COOKIE_SAMESITE=none exige COOKIE_SECURE=true (el navegador rechaza la cookie si no)');
+    process.exit(1);
 }
 
 module.exports = env;

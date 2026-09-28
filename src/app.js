@@ -5,6 +5,7 @@ const express = require('express');
 const path = require('path');
 const helmet = require('helmet');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 
 const authRoutes = require('./routes/authRoutes');
 const catalogoRoutes = require('./routes/catalogoRoutes');
@@ -18,8 +19,11 @@ app.set('trust proxy', 1);
 app.use(helmet());
 app.use(cors({
     origin: env.corsOrigin.length > 0 ? env.corsOrigin : false,
+    // Permite que el navegador envíe y guarde la cookie del refresh token.
+    credentials: true,
 }));
 app.use(express.json({ limit: '10kb' }));
+app.use(cookieParser());
 
 // Helmet pone Cross-Origin-Resource-Policy: same-origin, lo que impide que el frontend
 // (otro dominio) muestre estas imágenes. Solo los archivos estáticos se permiten cross-origin.

@@ -3,6 +3,13 @@ const authService = require('../services/authService');
 const categoriaModel = require('../models/categoriaModel');
 const { procesarFotoPerfil, procesarLogo, rutaAbsolutaDe } = require('../services/imageService');
 const { parsearJson } = require('../utils/validaciones');
+const {
+    borrarCookiesSesion,
+    leerRefreshToken,
+    leerPersistente,
+    pidePersistente,
+    responderConSesion,
+} = require('../utils/cookiesSesion');
 
 const booleano = (valor, defecto = false) => {
     if (valor === undefined || valor === null || valor === '') return defecto;
@@ -97,7 +104,7 @@ const verificarCorreo = async (req, res, next) => {
             return res.status(400).json({ error: 'Correo y código son requeridos' });
         }
         const resultado = await authService.verificarCorreo({ correo, codigo });
-        res.json(resultado);
+        responderConSesion(res, resultado, pidePersistente(req.body));
     } catch (err) {
         next(err);
     }
@@ -142,7 +149,7 @@ const iniciarSesion = async (req, res, next) => {
             return res.status(400).json({ error: 'Correo y contraseña requeridos' });
         }
         const resultado = await authService.iniciarSesion({ correo, contrasena });
-        res.json(resultado);
+        responderConSesion(res, resultado, pidePersistente(req.body));
     } catch (err) {
         next(err);
     }
@@ -150,18 +157,25 @@ const iniciarSesion = async (req, res, next) => {
 
 const refrescarToken = async (req, res, next) => {
     try {
-        const { refresh_token } = req.body;
-        const resultado = await authService.refrescarToken({ refresh_token });
-        res.json(resultado);
+        const resultado = await authService.refrescarToken({ refresh_token: leerRefreshToken(req) });
+        responderConSesion(res, resultado, leerPersistente(req));
     } catch (err) {
+        // Cookie ausente, caducada o revocada: se borra para no reintentar con ella.
+        if (err.status === 400 || err.status === 401 || err.status === 403) {
+            borrarCookiesSesion(res);
+        }
         next(err);
     }
 };
 
 const cerrarSesion = async (req, res, next) => {
     try {
-        const { refresh_token } = req.body;
-        const resultado = await authService.cerrarSesion({ refresh_token });
+        const refresh_token = leerRefreshToken(req);
+        // Sin cookie no hay nada que revocar, pero el logout igual debe responder bien.
+        const resultado = refresh_token
+            ? await authService.cerrarSesion({ refresh_token })
+            : { mensaje: 'Sesión cerrada' };
+        borrarCookiesSesion(res);
         res.json(resultado);
     } catch (err) {
         next(err);
@@ -200,7 +214,7 @@ const loginGoogle = async (req, res, next) => {
         }
         delete resultado.negocio_creado;
         // 202: la cuenta existe pero falta confirmar la vinculación con el código enviado al correo.
-        res.status(resultado.requiere_vinculacion ? 202 : 200).json(resultado);
+        responderConSesion(res, resultado, pidePersistente(req.body), resultado.requiere_vinculacion ? 202 : 200);
     } catch (err) {
         const abs = rutaAbsolutaDe(logoUrl);
         if (abs) fs.promises.unlink(abs).catch(() => {});
@@ -228,7 +242,7 @@ const vincularGoogle = async (req, res, next) => {
             return res.status(400).json({ error: 'id_token y codigo son requeridos' });
         }
         const resultado = await authService.vincularGoogle({ id_token, codigo });
-        res.json(resultado);
+        responderConSesion(res, resultado, pidePersistente(req.body));
     } catch (err) {
         next(err);
     }
@@ -370,7 +384,8 @@ const cambiarContrasena = async (req, res, next) => {
             nueva_contrasena,
             confirmar_contrasena,
         });
-        res.json(resultado);
+        // Se emitió un refresh token nuevo para este dispositivo: va a la cookie.
+        responderConSesion(res, resultado, leerPersistente(req));
     } catch (err) {
         next(err);
     }

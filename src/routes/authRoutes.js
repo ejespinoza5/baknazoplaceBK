@@ -3,6 +3,7 @@ const router = express.Router();
 const authController = require('../controllers/authController');
 const { uploadImagenes } = require('../middlewares/upload');
 const { requiereAutenticacion } = require('../middlewares/authMiddleware');
+const { exigirOrigenPermitido } = require('../middlewares/origenPermitido');
 const {
     limitadorRegistro,
     limitadorLogin,
@@ -24,8 +25,8 @@ router.post('/login/google', uploadImagenes, limitadorLogin, authController.logi
 router.post('/login/google/vincular', limitadorVerificacion, authController.vincularGoogle);
 router.post('/login/google/reenviar-codigo', limitadorVerificacion, authController.reenviarCodigoVinculacionGoogle);
 
-router.post('/refrescar-token', authController.refrescarToken);
-router.post('/logout', authController.cerrarSesion);
+router.post('/refrescar-token', exigirOrigenPermitido, authController.refrescarToken);
+router.post('/logout', exigirOrigenPermitido, authController.cerrarSesion);
 
 router.post('/solicitar-recuperacion', limitadorRecuperacion, authController.solicitarRecuperacion);
 router.post('/verificar-codigo-recuperacion', limitadorVerificacion, authController.verificarCodigoRecuperacion);
