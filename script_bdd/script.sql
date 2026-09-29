@@ -866,3 +866,20 @@ CREATE INDEX IF NOT EXISTS idx_anuncio_fotos_anuncio ON anuncio_fotos (anuncio_i
 
 -- "Mis anuncios" ordenado por fecha, para no escanear los vendidos.
 CREATE INDEX IF NOT EXISTS idx_anuncios_venta ON anuncios (autor_usuario_id, vendido);
+
+
+-- ============================================================
+-- Perfil público: foto de portada y seguidores
+-- ============================================================
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS foto_portada TEXT;
+
+CREATE TABLE IF NOT EXISTS seguidores (
+    seguidor_id UUID        NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    seguido_id  UUID        NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    creado_en   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (seguidor_id, seguido_id),
+    CONSTRAINT no_seguirse_a_si_mismo CHECK (seguidor_id <> seguido_id)
+);
+
+-- La PK cubre "a quién sigo" (seguidor_id primero); este índice cubre "quién me sigue".
+CREATE INDEX IF NOT EXISTS idx_seguidores_seguido ON seguidores (seguido_id, creado_en DESC);

@@ -207,6 +207,10 @@ const detalleDe = (fila) => {
 // Ningún número viaja aquí: `whatsapp` se mantiene por compatibilidad, siempre
 // null. La única forma de obtener un teléfono es POST /api/anuncios/:id/contacto.
 const autorDe = (fila, base) => ({
+    // Sin este id no se puede abrir el perfil de quien publicó: es lo que viaja
+    // en la URL (/perfil/:id) y lo único que permite ir de un anuncio a los
+    // demás de la misma persona.
+    id: Number(fila.autor_usuario_id),
     nombre: fila.negocio_nombre || fila.autor_nombres,
     foto: urlPublica(base, fila.negocio_nombre ? fila.negocio_logo : fila.autor_foto),
     verificado: fila.autor_verificado,

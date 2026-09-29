@@ -1,7 +1,7 @@
 const fs = require('fs');
 const authService = require('../services/authService');
 const categoriaModel = require('../models/categoriaModel');
-const { procesarFotoPerfil, procesarLogo, rutaAbsolutaDe } = require('../services/imageService');
+const { procesarFotoPerfil, procesarPortada, procesarLogo, rutaAbsolutaDe } = require('../services/imageService');
 const { parsearJson } = require('../utils/validaciones');
 const {
     borrarCookiesSesion,
@@ -302,6 +302,7 @@ const urlAbsoluta = (req, ruta) => {
 
 const conUrlsAbsolutas = (req, usuario) => {
     usuario.foto_perfil_url = urlAbsoluta(req, usuario.foto_perfil);
+    usuario.foto_portada_url = urlAbsoluta(req, usuario.foto_portada);
     if (usuario.negocio) {
         usuario.negocio.logo_url_completa = urlAbsoluta(req, usuario.negocio.logo_url);
     }
@@ -345,6 +346,7 @@ const cambiosNegocio = (body) =>
 
 const actualizarPerfil = async (req, res, next) => {
     let fotoPerfilUrl = null;
+    let fotoPortadaUrl = null;
     let logoUrl = null;
     try {
         const archivos = req.files || {};
@@ -361,6 +363,9 @@ const actualizarPerfil = async (req, res, next) => {
         if (archivos.foto_perfil?.[0]) {
             fotoPerfilUrl = await procesarFotoPerfil(archivos.foto_perfil[0].buffer);
         }
+        if (archivos.foto_portada?.[0]) {
+            fotoPortadaUrl = await procesarPortada(archivos.foto_portada[0].buffer);
+        }
         if (archivos.logo?.[0]) {
             logoUrl = await procesarLogo(archivos.logo[0].buffer);
         }
@@ -372,6 +377,8 @@ const actualizarPerfil = async (req, res, next) => {
             contacto,
             fotoPerfilUrl,
             eliminarFotoPerfil: booleano(body.eliminar_foto_perfil),
+            fotoPortadaUrl,
+            eliminarFotoPortada: booleano(body.eliminar_foto_portada),
             logoUrl,
             eliminarLogo: booleano(body.eliminar_logo),
         });
@@ -380,7 +387,7 @@ const actualizarPerfil = async (req, res, next) => {
         res.json({ mensaje: 'Perfil actualizado.', usuario: conUrlsAbsolutas(req, usuario) });
     } catch (err) {
         // Si algo falla, se borran las imágenes nuevas que ya se guardaron.
-        for (const url of [fotoPerfilUrl, logoUrl]) {
+        for (const url of [fotoPerfilUrl, fotoPortadaUrl, logoUrl]) {
             const abs = rutaAbsolutaDe(url);
             if (abs) fs.promises.unlink(abs).catch(() => {});
         }

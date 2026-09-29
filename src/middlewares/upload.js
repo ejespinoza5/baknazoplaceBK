@@ -21,9 +21,10 @@ const upload = multer({
     fileFilter,
 });
 
-// Captura foto_perfil (avatar del usuario) y logo (negocio), ambas opcionales.
+// Captura foto_perfil (avatar del usuario), foto_portada y logo (negocio), todas opcionales.
 const uploadImagenes = upload.fields([
     { name: 'foto_perfil', maxCount: 1 },
+    { name: 'foto_portada', maxCount: 1 },
     { name: 'logo', maxCount: 1 },
 ]);
 

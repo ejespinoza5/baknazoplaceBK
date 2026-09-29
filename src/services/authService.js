@@ -46,6 +46,7 @@ const publico = (usuario) => ({
     apellidos: usuario.apellidos,
     tipo_cuenta: usuario.tipo_cuenta,
     foto_perfil: usuario.foto_perfil || null,
+    foto_portada: usuario.foto_portada || null,
 });
 
 // Convierte un objeto/array a string JSON para columnas jsonb.
@@ -868,6 +869,8 @@ const actualizarPerfil = async ({
     contacto,
     fotoPerfilUrl,
     eliminarFotoPerfil,
+    fotoPortadaUrl,
+    eliminarFotoPortada,
     logoUrl,
     eliminarLogo,
 }) => {
@@ -884,7 +887,7 @@ const actualizarPerfil = async ({
         throw error('Solo las cuentas de negocio pueden editar datos del negocio', 400);
     }
     const hayCambiosUsuario =
-        Object.keys(cambiosUsuario).length > 0 || fotoPerfilUrl || eliminarFotoPerfil || contacto !== undefined;
+        Object.keys(cambiosUsuario).length > 0 || fotoPerfilUrl || eliminarFotoPerfil || fotoPortadaUrl || eliminarFotoPortada || contacto !== undefined;
     if (!hayCambiosUsuario && !hayCambiosNegocio) {
         throw error('No se enviaron cambios', 400);
     }
@@ -901,6 +904,9 @@ const actualizarPerfil = async ({
     let fotoPerfil = usuario.foto_perfil;
     if (fotoPerfilUrl) fotoPerfil = fotoPerfilUrl;
     else if (eliminarFotoPerfil) fotoPerfil = null;
+    let fotoPortada = usuario.foto_portada;
+    if (fotoPortadaUrl) fotoPortada = fotoPortadaUrl;
+    else if (eliminarFotoPortada) fotoPortada = null;
 
     // --- Datos del negocio (se combinan con los actuales y se valida el resultado) ---
     let negocioAnterior = null;
@@ -966,6 +972,7 @@ const actualizarPerfil = async ({
             nombres,
             apellidos,
             fotoPerfil,
+            fotoPortada,
             telefono,
             mostrarTelefono,
             client,
@@ -983,6 +990,7 @@ const actualizarPerfil = async ({
 
     // Ya guardado: se eliminan del disco las imágenes reemplazadas o quitadas.
     if (fotoPerfil !== usuario.foto_perfil) borrarImagen(usuario.foto_perfil);
+    if (fotoPortada !== usuario.foto_portada) borrarImagen(usuario.foto_portada);
     if (negocioFinal && negocioFinal.logoUrl !== negocioAnterior.logoUrl) borrarImagen(negocioAnterior.logoUrl);
 
     return obtenerPerfil(usuario.id);

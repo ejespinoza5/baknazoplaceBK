@@ -45,4 +45,16 @@ module.exports = {
             message: 'Estás dando demasiados me gusta. Espera un momento.',
         },
     }),
+    // Seguir/dejar de seguir: por usuario.
+    limitadorSeguir: rateLimit({
+        windowMs: 15 * 60 * 1000,
+        max: 60,
+        standardHeaders: true,
+        legacyHeaders: false,
+        keyGenerator: (req) => `usuario:${req.usuario.id}`,
+        message: {
+            error: 'Demasiadas acciones de seguir. Espera un momento.',
+            message: 'Demasiadas acciones de seguir. Espera un momento.',
+        },
+    }),
 };

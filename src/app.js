@@ -10,6 +10,7 @@ const cookieParser = require('cookie-parser');
 const authRoutes = require('./routes/authRoutes');
 const catalogoRoutes = require('./routes/catalogoRoutes');
 const anuncioRoutes = require('./routes/anuncioRoutes');
+const perfilRoutes = require('./routes/perfilRoutes');
 const app = express();
 
 // En producción la API está detrás de un proxy inverso (Nginx) que envía X-Forwarded-For.
@@ -44,6 +45,9 @@ app.use('/api/auth', authRoutes);
 // Catálogos del formulario y anuncios
 app.use('/api/catalogos', catalogoRoutes);
 app.use('/api/anuncios', anuncioRoutes);
+
+// Perfil público y seguidores
+app.use('/api/perfil', perfilRoutes);
 
 // Manejador de errores centralizado (nunca exponer detalles internos/stack al cliente)
 app.use((err, req, res, next) => {

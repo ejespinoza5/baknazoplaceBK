@@ -34,6 +34,10 @@ const procesarImagen = async ({ buffer, subcarpeta = 'general', maxAncho = 800, 
 const procesarFotoPerfil = (buffer) =>
     procesarImagen({ buffer, subcarpeta: 'perfiles', maxAncho: 500, maxAlto: 500, calidad: 80, recortar: true });
 
+// Foto de portada del perfil: banner apaisado 1500x500 (recorta el centro)
+const procesarPortada = (buffer) =>
+    procesarImagen({ buffer, subcarpeta: 'portadas', maxAncho: 1500, maxAlto: 500, calidad: 80, recortar: true });
+
 // Logo del negocio: mantiene proporción, máximo 600px
 const procesarLogo = (buffer) =>
     procesarImagen({ buffer, subcarpeta: 'logos', maxAncho: 600, maxAlto: 600, calidad: 85 });
@@ -70,4 +74,4 @@ const rutaAbsolutaDe = (urlPublica) => {
     return path.join(env.uploadDir, relativa);
 };
 
-module.exports = { procesarFotoPerfil, procesarLogo, procesarFotoAnuncio, rutaAbsolutaDe, rutaAbsolutaDeStorageKey };
+module.exports = { procesarFotoPerfil, procesarPortada, procesarLogo, procesarFotoAnuncio, rutaAbsolutaDe, rutaAbsolutaDeStorageKey };
