@@ -210,7 +210,7 @@ const autorDe = (fila, base) => ({
     // Sin este id no se puede abrir el perfil de quien publicó: es lo que viaja
     // en la URL (/perfil/:id) y lo único que permite ir de un anuncio a los
     // demás de la misma persona.
-    id: Number(fila.autor_usuario_id),
+    id: fila.autor_usuario_id,
     nombre: fila.negocio_nombre || fila.autor_nombres,
     foto: urlPublica(base, fila.negocio_nombre ? fila.negocio_logo : fila.autor_foto),
     verificado: fila.autor_verificado,
