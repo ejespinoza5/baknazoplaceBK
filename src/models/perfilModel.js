@@ -8,6 +8,7 @@ const obtenerPerfilPublico = async (usuarioId, visitanteId) => {
                 n.nombre_comercial, n.logo_url, n.descripcion_breve, n.ciudad, n.sector,
                 n.direccion_local, n.horario_atencion, n.entrega_domicilio, n.zona_cobertura,
                 n.telefono AS negocio_telefono, n.whatsapp AS negocio_whatsapp, n.redes_sociales,
+                n.latitud, n.longitud,
                 cat.nombre AS categoria_nombre,
                 (SELECT COUNT(*) FROM anuncios a
                   WHERE a.autor_usuario_id = u.id AND a.estado = 'PUBLICADO' AND a.eliminado_en IS NULL)::int AS publicados,

@@ -119,6 +119,8 @@ const obtenerPerfil = async ({ usuarioId, visitanteId, base, query }) => {
             zonaCobertura: esNegocio ? f.zona_cobertura || null : null,
             telefono,
             whatsapp,
+            latitud: esNegocio && f.latitud !== null ? Number(f.latitud) : null,
+            longitud: esNegocio && f.longitud !== null ? Number(f.longitud) : null,
             redes: esNegocio ? redesPublicas(f.redes_sociales) : [],
             // Aún no hay sistema de valoraciones.
             valoracion: null,
