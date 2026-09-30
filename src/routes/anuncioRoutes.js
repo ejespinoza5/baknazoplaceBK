@@ -1,9 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const anuncioController = require('../controllers/anuncioController');
-const { uploadFotosAnuncio } = require('../middlewares/upload');
+const postulacionController = require('../controllers/postulacionController');
+const { uploadFotosAnuncio, uploadCv } = require('../middlewares/upload');
 const { requiereAutenticacion, autenticacionOpcional } = require('../middlewares/authMiddleware');
-const { limitadorPublicacion, limitadorContacto, limitadorLike } = require('../middlewares/rateLimiter');
+const {
+    limitadorPublicacion,
+    limitadorContacto,
+    limitadorLike,
+    limitadorPostulacion,
+} = require('../middlewares/rateLimiter');
 
 // Feed público. La sesión es opcional: sin token se ve igual, y con token el
 // backend sabe a qué anuncios les diste me gusta (meGusta) y cuáles son tuyos (esMio).
@@ -30,5 +36,14 @@ router.post('/:id/contacto', requiereAutenticacion, limitadorContacto, anuncioCo
 // nunca la URL, así que nadie puede quitar el like de otro.
 router.post('/:id/likes', requiereAutenticacion, limitadorLike, anuncioController.darLike);
 router.delete('/:id/likes/me', requiereAutenticacion, limitadorLike, anuncioController.quitarLike);
+
+// Postularse a una vacante con el CV en PDF (campo 'cv' + 'mensaje' + 'telefono').
+router.post(
+    '/:id/postulaciones',
+    requiereAutenticacion,
+    limitadorPostulacion,
+    uploadCv,
+    postulacionController.postular
+);
 
 module.exports = router;

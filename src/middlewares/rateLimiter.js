@@ -57,4 +57,16 @@ module.exports = {
             message: 'Demasiadas acciones de seguir. Espera un momento.',
         },
     }),
+    // Postularse sube un PDF: por usuario, y bastante más bajo que un like.
+    limitadorPostulacion: rateLimit({
+        windowMs: 60 * 60 * 1000,
+        max: 20,
+        standardHeaders: true,
+        legacyHeaders: false,
+        keyGenerator: (req) => `usuario:${req.usuario.id}`,
+        message: {
+            error: 'Enviaste demasiadas postulaciones. Espera un rato e inténtalo de nuevo.',
+            message: 'Enviaste demasiadas postulaciones. Espera un rato e inténtalo de nuevo.',
+        },
+    }),
 };

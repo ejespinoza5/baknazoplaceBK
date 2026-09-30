@@ -4,6 +4,7 @@ const pool = require('../config/db');
 const anuncioModel = require('../models/anuncioModel');
 const catalogoModel = require('../models/catalogoModel');
 const negocioModel = require('../models/negocioModel');
+const postulacionService = require('./postulacionService');
 const { procesarFotoAnuncio, rutaAbsolutaDeStorageKey } = require('./imageService');
 const { validarLatitud, validarLongitud } = require('../utils/validaciones');
 const { resolverContacto, telefonoLegible, enlaceWhatsapp } = require('../utils/telefono');
@@ -420,9 +421,13 @@ const obtener = async ({ idOSlug, usuarioId, base }) => {
         anuncioModel.incrementarVistas(fila.id).catch(() => {});
     }
 
-    const fotos = await anuncioModel.listarFotos(fila.id);
-    const conLike = await anuncioModel.idsConLike(usuarioId, [fila.id]);
-    return aAnuncio(fila, fotos, base, esMio, conLike.has(String(fila.id)));
+    const [fotos, conLike, postulacion] = await Promise.all([
+        anuncioModel.listarFotos(fila.id),
+        anuncioModel.idsConLike(usuarioId, [fila.id]),
+        // Solo empleo: si quien mira ya se postuló, o cuántas tiene el dueño.
+        postulacionService.infoParaAnuncio(fila, usuarioId),
+    ]);
+    return { ...aAnuncio(fila, fotos, base, esMio, conLike.has(String(fila.id))), ...postulacion };
 };
 
 // ---------- Feed ----------
@@ -435,6 +440,8 @@ const decodificarCursor = (cursor, orden) => {
         const idValido = /^\d+$/.test(String(c.id));
         if (orden === 'cercanos' && idValido && typeof c.d === 'number' && Number.isFinite(c.d)) return c;
         if (orden === 'recientes' && idValido && typeof c.p === 'string' && !Number.isNaN(Date.parse(c.p))) return c;
+        // Precio: se guarda como texto para no perder los decimales de NUMERIC.
+        if ((orden === 'precio_asc' || orden === 'precio_desc') && idValido && /^-?\d+(\.\d+)?$/.test(String(c.v))) return c;
         // 'mios': creado_en tal como lo imprime Postgres (con microsegundos y zona horaria).
         if (orden === 'mios' && idValido && typeof c.c === 'string' && REGEX_TIMESTAMP_PG.test(c.c)) return c;
     } catch (e) {
@@ -446,6 +453,7 @@ const decodificarCursor = (cursor, orden) => {
 const codificarCursor = (fila, orden) => {
     let c;
     if (orden === 'cercanos') c = { d: fila.distancia_km, id: String(fila.id) };
+    else if (orden === 'precio_asc' || orden === 'precio_desc') c = { v: String(fila.precio_orden), id: String(fila.id) };
     else if (orden === 'mios') c = { c: fila.creado_en_exacto, id: String(fila.id) };
     else c = { p: new Date(fila.publicado_en).toISOString(), id: String(fila.id) };
     return Buffer.from(JSON.stringify(c)).toString('base64url');
@@ -480,7 +488,20 @@ const paginar = (filas, limite, orden) => {
 
 const listarFeed = async ({ query, usuarioId, base }) => {
     const orden = query.orden || 'recientes';
-    if (!['recientes', 'cercanos'].includes(orden)) throw error("Parámetro 'orden' inválido", 400);
+    if (!['recientes', 'cercanos', 'precio_asc', 'precio_desc'].includes(orden)) {
+        throw error("Parámetro 'orden' inválido", 400);
+    }
+
+    // Filtros del detalle de cada pilar: solo valores de las enumeraciones.
+    const enumOpcional = (valor, nombre, lista) => {
+        if (vacio(valor)) return null;
+        if (!Object.prototype.hasOwnProperty.call(lista, valor)) throw error(`Parámetro '${nombre}' inválido`, 400);
+        return valor;
+    };
+    const condicion = enumOpcional(query.condicion, 'condicion', ENUMERACIONES.condicion);
+    const modalidadCobro = enumOpcional(query.modalidadCobro, 'modalidadCobro', ENUMERACIONES.modalidadCobro);
+    const jornada = enumOpcional(query.jornada, 'jornada', ENUMERACIONES.jornada);
+    const modalidad = enumOpcional(query.modalidad, 'modalidad', ENUMERACIONES.modalidad);
 
     if (query.pilar && !PILARES.includes(query.pilar)) throw error("Parámetro 'pilar' inválido", 400);
     if (query.canton && !/^\d{6}$/.test(query.canton)) throw error("Parámetro 'canton' inválido", 400);
@@ -507,6 +528,11 @@ const listarFeed = async ({ query, usuarioId, base }) => {
         q: q ? q.slice(0, 100) : null,
         precioMin: numeroOpcional(query.precioMin, 'precioMin', { min: 0 }),
         precioMax: numeroOpcional(query.precioMax, 'precioMax', { min: 0 }),
+        condicion,
+        modalidadCobro,
+        jornada,
+        modalidad,
+        conFoto: query.conFoto === 'true' || query.conFoto === '1',
         lat,
         lng,
         radioKm,

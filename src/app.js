@@ -11,6 +11,7 @@ const authRoutes = require('./routes/authRoutes');
 const catalogoRoutes = require('./routes/catalogoRoutes');
 const anuncioRoutes = require('./routes/anuncioRoutes');
 const perfilRoutes = require('./routes/perfilRoutes');
+const postulacionRoutes = require('./routes/postulacionRoutes');
 const app = express();
 
 // En producción la API está detrás de un proxy inverso (Nginx) que envía X-Forwarded-For.
@@ -48,6 +49,9 @@ app.use('/api/anuncios', anuncioRoutes);
 
 // Perfil público y seguidores
 app.use('/api/perfil', perfilRoutes);
+
+// Postulaciones a empleo (bandeja del empleador, las enviadas y la descarga del CV)
+app.use('/api/postulaciones', postulacionRoutes);
 
 // Manejador de errores centralizado (nunca exponer detalles internos/stack al cliente)
 app.use((err, req, res, next) => {

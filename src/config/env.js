@@ -38,6 +38,9 @@ const env = {
         replyTo: process.env.SMTP_REPLY_TO || null,
     },
     uploadDir: process.env.UPLOAD_DIR || path.join(__dirname, '..', '..', 'uploads'),
+    // Archivos privados (hojas de vida). NUNCA se sirve como estático: solo se
+    // leen desde la API tras comprobar quién los pide.
+    privadoDir: process.env.PRIVATE_DIR || path.join(__dirname, '..', '..', 'privado'),
     logoUrl: process.env.LOGO_URL || 'https://apibaknazo.duckdns.org/public/logo.png',
     frontendUrl: process.env.FRONTEND_URL || 'https://app.baknazo.com',
 };

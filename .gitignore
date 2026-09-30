@@ -89,3 +89,5 @@ public/uploads/
 # Configuraciones de ESLint/Prettier
 .eslintcache
 .prettierignore
+# Hojas de vida y demás archivos privados (nunca al repo)
+privado/

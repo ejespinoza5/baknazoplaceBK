@@ -243,6 +243,12 @@ const feed = async (f) => {
     if (f.precioMin !== null) where.push(`a.precio >= ${p(f.precioMin)}`);
     if (f.precioMax !== null) where.push(`a.precio <= ${p(f.precioMax)}`);
     if (f.q) where.push(`to_tsvector('spanish', a.titulo) @@ websearch_to_tsquery('spanish', ${p(f.q)})`);
+    // Detalle de cada pilar: los alias ap/asv/ae vienen de SELECT_BASE.
+    if (f.condicion) where.push(`ap.condicion = ${p(f.condicion)}`);
+    if (f.modalidadCobro) where.push(`asv.modalidad_cobro = ${p(f.modalidadCobro)}`);
+    if (f.jornada) where.push(`ae.jornada = ${p(f.jornada)}`);
+    if (f.modalidad) where.push(`ae.modalidad = ${p(f.modalidad)}`);
+    if (f.conFoto) where.push('f0.storage_key IS NOT NULL');
 
     const hayPunto = f.lat !== null && f.lng !== null;
     const distancia = hayPunto ? distanciaSql(p(f.lat), p(f.lng)) : 'NULL::float8';
@@ -251,10 +257,21 @@ const feed = async (f) => {
     const filtrosExternos = [];
     if (hayPunto && f.radioKm !== null) filtrosExternos.push(`t.distancia_km <= ${p(f.radioKm)}`);
 
+    // "A convenir" (precio NULL) va siempre al final: se sustituye por un tope
+    // fuera de rango para que la clave del cursor nunca sea NULL.
+    const precioOrden =
+        f.orden === 'precio_desc' ? 'COALESCE(a.precio, -1)::numeric' : 'COALESCE(a.precio, 99999999999)::numeric';
+
     let ordenSql;
     if (f.orden === 'cercanos') {
         if (f.cursor) filtrosExternos.push(`(t.distancia_km, t.id) > (${p(f.cursor.d)}::float8, ${p(f.cursor.id)}::bigint)`);
         ordenSql = 't.distancia_km ASC, t.id ASC';
+    } else if (f.orden === 'precio_asc') {
+        if (f.cursor) filtrosExternos.push(`(t.precio_orden, t.id) > (${p(f.cursor.v)}::numeric, ${p(f.cursor.id)}::bigint)`);
+        ordenSql = 't.precio_orden ASC, t.id ASC';
+    } else if (f.orden === 'precio_desc') {
+        if (f.cursor) filtrosExternos.push(`(t.precio_orden, t.id) < (${p(f.cursor.v)}::numeric, ${p(f.cursor.id)}::bigint)`);
+        ordenSql = 't.precio_orden DESC, t.id DESC';
     } else {
         if (f.cursor) {
             filtrosExternos.push(`(t.publicado_en, t.id) < (${p(f.cursor.p)}::timestamptz, ${p(f.cursor.id)}::bigint)`);
@@ -264,7 +281,10 @@ const feed = async (f) => {
 
     const sql = `
         SELECT * FROM (
-            ${SELECT_BASE.replace('SELECT a.*,', `SELECT a.*, ${distancia} AS distancia_km, ${FOTOS_JSON},`)}
+            ${SELECT_BASE.replace(
+                'SELECT a.*,',
+                `SELECT a.*, ${distancia} AS distancia_km, ${precioOrden} AS precio_orden, ${FOTOS_JSON},`
+            )}
             WHERE ${where.join(' AND ')}
         ) t
         ${filtrosExternos.length ? `WHERE ${filtrosExternos.join(' AND ')}` : ''}

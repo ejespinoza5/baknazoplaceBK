@@ -883,3 +883,60 @@ CREATE TABLE IF NOT EXISTS seguidores (
 
 -- La PK cubre "a quién sigo" (seguidor_id primero); este índice cubre "quién me sigue".
 CREATE INDEX IF NOT EXISTS idx_seguidores_seguido ON seguidores (seguido_id, creado_en DESC);
+
+
+-- ============================================================
+-- Perfil público: privacidad (qué ve alguien que no es el dueño)
+-- Objeto jsonb con booleanos: vendidos, me_gusta, seguidores, ubicacion,
+-- miembro_desde, direccion, horario, redes, contacto_negocio.
+-- Clave ausente = visible, así que '{}' es un perfil completo.
+-- ============================================================
+ALTER TABLE usuarios
+    ADD COLUMN IF NOT EXISTS privacidad_perfil JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+COMMENT ON COLUMN usuarios.privacidad_perfil IS
+    'Qué partes del perfil público se ocultan a los visitantes. Clave ausente = visible.';
+
+
+-- ============================================================
+-- Empleo: postulaciones con CV
+-- Una persona se postula una sola vez a cada vacante. El CV es un PDF que se
+-- guarda FUERA de /uploads (carpeta privada): solo lo descargan el dueño de la
+-- vacante y quien se postuló, a través de la API y con sesión.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS postulaciones (
+    id              BIGSERIAL PRIMARY KEY,
+    anuncio_id      BIGINT      NOT NULL REFERENCES anuncios(id) ON DELETE CASCADE,
+    postulante_id   UUID        NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    mensaje         VARCHAR(1500),
+    telefono        VARCHAR(20),
+    cv_key          TEXT        NOT NULL,   -- ruta relativa dentro de la carpeta privada
+    cv_nombre       VARCHAR(160) NOT NULL,  -- nombre original, para la descarga
+    cv_bytes        INTEGER     NOT NULL,
+    -- NUEVA → VISTA al abrirla; PRESELECCIONADA / DESCARTADA / CONTRATADA las decide el dueño.
+    estado          VARCHAR(20) NOT NULL DEFAULT 'NUEVA'
+        CHECK (estado IN ('NUEVA', 'VISTA', 'PRESELECCIONADA', 'DESCARTADA', 'CONTRATADA')),
+    nota_interna    VARCHAR(1000),          -- solo la ve el dueño de la vacante
+    creado_en       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    actualizado_en  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (anuncio_id, postulante_id)
+);
+
+-- Bandeja del dueño: por vacante y más recientes primero.
+CREATE INDEX IF NOT EXISTS idx_postulaciones_anuncio ON postulaciones (anuncio_id, creado_en DESC);
+-- "Mis postulaciones" de quien busca trabajo.
+CREATE INDEX IF NOT EXISTS idx_postulaciones_postulante ON postulaciones (postulante_id, creado_en DESC);
+
+DROP TRIGGER IF EXISTS trg_postulaciones_actualizado ON postulaciones;
+CREATE TRIGGER trg_postulaciones_actualizado
+    BEFORE UPDATE ON postulaciones
+    FOR EACH ROW
+    EXECUTE FUNCTION set_actualizado_en();
+
+
+-- ============================================================
+-- Búsqueda y filtros del feed
+-- ============================================================
+-- Orden por precio (más baratos / más caros) sin recorrer toda la tabla.
+CREATE INDEX IF NOT EXISTS idx_anuncios_precio ON anuncios (precio, id)
+    WHERE estado = 'PUBLICADO' AND eliminado_en IS NULL AND NOT vendido;

@@ -59,4 +59,52 @@ const uploadFotosAnuncio = (req, res, next) => {
     });
 };
 
-module.exports = { uploadImagenes, uploadFotosAnuncio };
+// Hoja de vida: un solo PDF en el campo 'cv'. El cliente ya lo comprime antes
+// de subirlo; este límite es el techo por si llega sin comprimir.
+const MAX_BYTES_CV = Number(process.env.MAX_BYTES_CV || 5 * 1024 * 1024);
+
+const uploadCvMulter = multer({
+    storage,
+    limits: { fileSize: MAX_BYTES_CV, files: 1 },
+    fileFilter: (req, file, cb) => {
+        // Algunos navegadores mandan 'application/octet-stream' para PDFs: se
+        // acepta y se decide por la firma del archivo después.
+        if (['application/pdf', 'application/x-pdf', 'application/octet-stream'].includes(file.mimetype)) {
+            return cb(null, true);
+        }
+        const err = new Error('La hoja de vida debe ser un archivo PDF');
+        err.status = 400;
+        cb(err);
+    },
+}).single('cv');
+
+// Los errores vuelven como 422 con el campo 'cv', igual que las fotos de anuncio.
+const uploadCv = (req, res, next) => {
+    uploadCvMulter(req, res, (err) => {
+        let mensaje = null;
+        if (err) {
+            if (err.name === 'MulterError') {
+                mensaje =
+                    err.code === 'LIMIT_FILE_SIZE'
+                        ? `El PDF puede pesar como máximo ${Math.round(MAX_BYTES_CV / 1024 / 1024)} MB`
+                        : 'Adjunta un solo PDF en el campo cv';
+            } else if (err.status === 400) {
+                mensaje = err.message;
+            } else {
+                return next(err);
+            }
+        } else if (req.file && req.file.buffer.subarray(0, 5).toString('latin1') !== '%PDF-') {
+            // La extensión y el mimetype se pueden falsificar; la firma no tanto.
+            mensaje = 'El archivo no es un PDF válido';
+        }
+        if (!mensaje) return next();
+        res.status(422).json({
+            error: 'Datos inválidos',
+            message: mensaje,
+            statusCode: 422,
+            errores: { cv: mensaje },
+        });
+    });
+};
+
+module.exports = { uploadImagenes, uploadFotosAnuncio, uploadCv, MAX_BYTES_CV };

@@ -225,11 +225,34 @@ const enviarBienvenida = (correo, nombres, tipoCuenta = 'PERSONA') =>
         html: htmlBienvenida(nombres, tipoCuenta),
     });
 
+// Aviso al dueño de una vacante: alguien se postuló. No lleva el CV adjunto a
+// propósito; se descarga desde la app, con sesión, y así no circula por correo.
+const htmlNuevaPostulacion = (nombrePostulante, tituloVacante, enlace) =>
+    plantilla({
+        chip: chip('Empleo', C.exito, '#FFFFFF'),
+        titulo: 'Nueva postulación',
+        cuerpoHtml: `
+            <p style="margin-top:0;"><strong>${escaparHtml(nombrePostulante)}</strong> se postuló a tu vacante
+            <strong>${escaparHtml(tituloVacante)}</strong> y adjuntó su hoja de vida.</p>
+            ${cajaInfo(`Revísala en la sección <strong>Postulaciones</strong> de BAKNAZO:<br><a href="${escaparHtml(enlace)}">${escaparHtml(enlace)}</a>`)}
+            ${cajaSeguridad('Por privacidad, el CV no viaja por correo: solo se descarga desde la app con tu sesión.')}`,
+    });
+
+const enviarNuevaPostulacion = (correo, { nombrePostulante, tituloVacante, enlace }) =>
+    enviarCorreo({
+        para: correo,
+        asunto: `Nueva postulación: ${tituloVacante} - BAKNAZO`,
+        textoPlano: `${nombrePostulante} se postuló a "${tituloVacante}". Revisa su hoja de vida en ${enlace}`,
+        html: htmlNuevaPostulacion(nombrePostulante, tituloVacante, enlace),
+        codigoParaConsola: '-',
+    });
+
 module.exports = {
     enviarCodigoVerificacion,
     enviarCodigoRecuperacion,
     enviarCodigoVinculacion,
     enviarBienvenida,
+    enviarNuevaPostulacion,
     // Generadores de HTML (útiles para vistas previas o pruebas)
     htmlCodigoVerificacion,
     htmlCodigoRecuperacion,

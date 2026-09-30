@@ -36,4 +36,34 @@ const obtenerCatalogos = async (req, res, next) => {
     }
 };
 
-module.exports = { obtenerCatalogos };
+// GET /api/catalogos/resumen: cifras para "Explorar" y el menú de categorías.
+// Cuenta anuncios visibles del feed (publicados, vigentes, sin vender).
+const obtenerResumen = async (req, res, next) => {
+    try {
+        const [porCategoria, ciudades, conUbicacion] = await Promise.all([
+            catalogoModel.contarPorCategoria(),
+            catalogoModel.cantonesConMasAnuncios(8),
+            catalogoModel.contarConUbicacion(),
+        ]);
+        const categorias = Object.fromEntries(porCategoria.map((f) => [f.id, f.total]));
+        const total = porCategoria.reduce((suma, f) => suma + f.total, 0);
+
+        // Cambia a cada publicación, pero un minuto de retraso no le importa a nadie.
+        res.set('Cache-Control', 'public, max-age=60');
+        res.json({
+            total,
+            categorias,
+            ciudades: ciudades.map((c) => ({
+                codigo: c.codigo,
+                nombre: c.nombre,
+                provincia: c.provincia_nombre,
+                total: c.total,
+            })),
+            conUbicacion,
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
+module.exports = { obtenerCatalogos, obtenerResumen };
