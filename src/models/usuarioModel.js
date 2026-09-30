@@ -51,6 +51,16 @@ const actualizarDatosPerfil = async ({ usuarioId, nombres, apellidos, fotoPerfil
     );
 };
 
+// Va aparte de actualizarDatosPerfil: así el resto de la edición del perfil
+// sigue funcionando en una base sin la migración de privacidad_perfil.
+const actualizarPrivacidad = async ({ usuarioId, privacidad, client }) => {
+    const db = client || pool;
+    await db.query(`UPDATE usuarios SET privacidad_perfil = $2 WHERE id = $1`, [
+        usuarioId,
+        JSON.stringify(privacidad),
+    ]);
+};
+
 module.exports = {
     crearUsuario,
     buscarPorCorreo,
@@ -58,4 +68,5 @@ module.exports = {
     actualizarUltimoAcceso,
     marcarCorreoVerificado,
     actualizarDatosPerfil,
+    actualizarPrivacidad,
 };

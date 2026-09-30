@@ -20,7 +20,15 @@ const obtener = async (req, res, next) => {
 
 const listarAnuncios = async (req, res, next) => {
     try {
-        res.json(await perfilService.listarAnuncios({ usuarioId: req.params.id, base: baseUrl(req), query: req.query }));
+        const resultado = await perfilService.listarAnuncios({
+            usuarioId: req.params.id,
+            visitanteId: req.usuario?.id,
+            base: baseUrl(req),
+            query: req.query,
+        });
+        // Depende de quién mira (el dueño ve sus vendidos aunque los oculte).
+        res.set('Cache-Control', 'private, no-cache');
+        res.json(resultado);
     } catch (err) {
         next(err);
     }
@@ -47,6 +55,7 @@ const listar = (direccion) => async (req, res, next) => {
         res.json(
             await perfilService.listarRelacion({
                 usuarioId: req.params.id,
+                visitanteId: req.usuario?.id,
                 direccion,
                 query: req.query,
                 base: baseUrl(req),

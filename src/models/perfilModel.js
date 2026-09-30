@@ -5,6 +5,9 @@ const obtenerPerfilPublico = async (usuarioId, visitanteId) => {
     const { rows } = await pool.query(
         `SELECT u.id, u.tipo_cuenta, u.nombres, u.apellidos, u.foto_perfil, u.foto_portada,
                 u.correo_verificado, u.creado_en,
+                -- to_jsonb en vez de la columna directa: si la migración de
+                -- privacidad aún no corrió, sale NULL en lugar de romper la consulta.
+                to_jsonb(u) -> 'privacidad_perfil' AS privacidad_perfil,
                 n.nombre_comercial, n.logo_url, n.descripcion_breve, n.ciudad, n.sector,
                 n.direccion_local, n.horario_atencion, n.entrega_domicilio, n.zona_cobertura,
                 n.telefono AS negocio_telefono, n.whatsapp AS negocio_whatsapp, n.redes_sociales,
@@ -12,6 +15,9 @@ const obtenerPerfilPublico = async (usuarioId, visitanteId) => {
                 cat.nombre AS categoria_nombre,
                 (SELECT COUNT(*) FROM anuncios a
                   WHERE a.autor_usuario_id = u.id AND a.estado = 'PUBLICADO' AND a.eliminado_en IS NULL)::int AS publicados,
+                (SELECT COUNT(*) FROM anuncios a
+                  WHERE a.autor_usuario_id = u.id AND a.estado = 'PUBLICADO' AND NOT a.vendido
+                    AND a.eliminado_en IS NULL)::int AS disponibles,
                 (SELECT COUNT(*) FROM anuncios a
                   WHERE a.autor_usuario_id = u.id AND a.vendido AND a.eliminado_en IS NULL)::int AS vendidos,
                 (SELECT COUNT(*) FROM anuncio_likes l JOIN anuncios a ON a.id = l.anuncio_id
@@ -29,7 +35,8 @@ const obtenerPerfilPublico = async (usuarioId, visitanteId) => {
 };
 
 // Anuncios públicos del usuario (publicados, incluidos los vendidos), con su foto de portada.
-const listarAnunciosPublicos = async (usuarioId, { limite, offset }) => {
+// soloDisponibles deja fuera los vendidos (cuando el dueño oculta sus ventas).
+const listarAnunciosPublicos = async (usuarioId, { limite, offset }, soloDisponibles = false) => {
     const { rows } = await pool.query(
         `SELECT a.id, a.titulo, a.precio, a.moneda, a.pilar, a.vendido, a.publicado_en, a.vistas,
                 a.sector, c.nombre AS canton_nombre, f0.storage_key AS portada_key,
@@ -38,9 +45,10 @@ const listarAnunciosPublicos = async (usuarioId, { limite, offset }) => {
          JOIN cantones c ON c.codigo = a.canton_codigo
          LEFT JOIN anuncio_fotos f0 ON f0.anuncio_id = a.id AND f0.orden = 0
          WHERE a.autor_usuario_id = $1 AND a.estado = 'PUBLICADO' AND a.eliminado_en IS NULL
+           AND (NOT $4::boolean OR NOT a.vendido)
          ORDER BY a.vendido, a.publicado_en DESC, a.id DESC
          LIMIT $2 OFFSET $3`,
-        [usuarioId, limite, offset]
+        [usuarioId, limite, offset, soloDisponibles]
     );
     return rows;
 };

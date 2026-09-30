@@ -356,6 +356,11 @@ const actualizarPerfil = async (req, res, next) => {
         // Contacto del usuario (no el 'telefono' del negocio del nivel superior).
         // En JSON llega como objeto; en multipart, como string JSON. null = no tocar.
         const contacto = body.contacto !== undefined ? parsearJson(body.contacto, 'contacto') ?? undefined : undefined;
+        // Igual que 'contacto': objeto en JSON, string JSON en multipart.
+        const privacidad =
+            body.privacidad_perfil !== undefined
+                ? parsearJson(body.privacidad_perfil, 'privacidad_perfil') ?? undefined
+                : undefined;
         if (archivos.logo?.[0] && req.usuario.tipo_cuenta !== 'NEGOCIO') {
             return res.status(400).json({ error: 'Solo las cuentas de negocio pueden tener logo' });
         }
@@ -375,6 +380,7 @@ const actualizarPerfil = async (req, res, next) => {
             usuario: soloEnviados({ nombres: body.nombres, apellidos: body.apellidos }),
             negocio,
             contacto,
+            privacidad,
             fotoPerfilUrl,
             eliminarFotoPerfil: booleano(body.eliminar_foto_perfil),
             fotoPortadaUrl,

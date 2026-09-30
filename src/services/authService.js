@@ -17,6 +17,7 @@ const googleAuthService = require('./googleAuthService');
 const { procesarFotoPerfil, procesarLogo, rutaAbsolutaDe } = require('./imageService');
 const { generarCodigoNumerico, hashCodigo, hashToken } = require('../utils/codigos');
 const { normalizarTelefono } = require('../utils/telefono');
+const { privacidadDe, validarPrivacidad } = require('../utils/privacidad');
 const {
     validarCorreo,
     validarContrasena,
@@ -747,6 +748,12 @@ const obtenerPerfil = async (usuarioId) => {
         },
     };
 
+    // Solo si la columna existe (migración 2026-09-29): el cliente usa su
+    // ausencia para saber que el servidor todavía no guarda la privacidad.
+    if (usuario.privacidad_perfil !== undefined) {
+        perfil.privacidad_perfil = privacidadDe(usuario.privacidad_perfil);
+    }
+
     if (usuario.tipo_cuenta === 'NEGOCIO') {
         const n = await negocioModel.buscarPorUsuarioConCategoria(usuario.id);
         if (n) {
@@ -867,6 +874,7 @@ const actualizarPerfil = async ({
     usuario: cambiosUsuario = {},
     negocio: cambiosNegocio = {},
     contacto,
+    privacidad: privacidadEnviada,
     fotoPerfilUrl,
     eliminarFotoPerfil,
     fotoPortadaUrl,
@@ -887,9 +895,26 @@ const actualizarPerfil = async ({
         throw error('Solo las cuentas de negocio pueden editar datos del negocio', 400);
     }
     const hayCambiosUsuario =
-        Object.keys(cambiosUsuario).length > 0 || fotoPerfilUrl || eliminarFotoPerfil || fotoPortadaUrl || eliminarFotoPortada || contacto !== undefined;
+        Object.keys(cambiosUsuario).length > 0 ||
+        fotoPerfilUrl ||
+        eliminarFotoPerfil ||
+        fotoPortadaUrl ||
+        eliminarFotoPortada ||
+        contacto !== undefined ||
+        privacidadEnviada !== undefined;
     if (!hayCambiosUsuario && !hayCambiosNegocio) {
         throw error('No se enviaron cambios', 400);
+    }
+
+    // --- Privacidad del perfil público ---
+    let privacidad;
+    if (privacidadEnviada !== undefined) {
+        if (usuario.privacidad_perfil === undefined) {
+            throw error('El servidor aún no admite la privacidad del perfil (falta la migración).', 503);
+        }
+        const resultado = validarPrivacidad(privacidadEnviada);
+        if (resultado.error) throw error(resultado.error, 400);
+        privacidad = resultado.privacidad;
     }
 
     // --- Datos del usuario ---
@@ -979,6 +1004,9 @@ const actualizarPerfil = async ({
         });
         if (negocioFinal) {
             await negocioModel.actualizarPorUsuario(usuario.id, negocioFinal, client);
+        }
+        if (privacidad) {
+            await usuarioModel.actualizarPrivacidad({ usuarioId: usuario.id, privacidad, client });
         }
         await client.query('COMMIT');
     } catch (e) {

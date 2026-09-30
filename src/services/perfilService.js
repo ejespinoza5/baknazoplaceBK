@@ -1,4 +1,5 @@
 const perfilModel = require('../models/perfilModel');
+const { privacidadDe } = require('../utils/privacidad');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -81,18 +82,34 @@ const paginacionDe = (query = {}) => ({
 
 const infoPagina = ({ limite, offset }, total) => ({ limite, offset, total, hayMas: offset + limite < total });
 
+// Qué ve este visitante. El dueño lo ve todo; el resto, lo que el dueño dejó visible.
+const visibleParaVisitante = (f, visitanteId) => {
+    const privacidad = privacidadDe(f.privacidad_perfil);
+    const esDueno = Boolean(visitanteId) && visitanteId === f.id;
+    const ve = (clave) => esDueno || privacidad[clave];
+    return { privacidad, esDueno, ve };
+};
+
 const obtenerPerfil = async ({ usuarioId, visitanteId, base, query }) => {
     validarId(usuarioId);
     const f = await perfilModel.obtenerPerfilPublico(usuarioId, visitanteId);
     if (!f) throw error('Usuario no encontrado', 404);
 
+    const { privacidad, ve } = visibleParaVisitante(f, visitanteId);
+    const verVendidos = ve('vendidos');
+
     const pagina = paginacionDe(query);
-    const anuncios = (await perfilModel.listarAnunciosPublicos(usuarioId, pagina)).map((a) => anuncioPublico(base, a));
+    const anuncios = (await perfilModel.listarAnunciosPublicos(usuarioId, pagina, !verVendidos)).map((a) =>
+        anuncioPublico(base, a)
+    );
     const esNegocio = f.tipo_cuenta === 'NEGOCIO';
 
-    // El teléfono personal nunca es público: solo se exponen los datos de contacto del negocio.
-    const telefono = esNegocio ? f.negocio_telefono || null : null;
-    const whatsapp = esNegocio ? f.negocio_whatsapp || null : null;
+    // El teléfono personal nunca es público: solo se exponen los datos de contacto del negocio,
+    // y solo si el dueño no los ocultó.
+    const verContacto = esNegocio && ve('contacto_negocio');
+    const telefono = verContacto ? f.negocio_telefono || null : null;
+    const whatsapp = verContacto ? f.negocio_whatsapp || null : null;
+    const verDireccion = esNegocio && ve('direccion');
 
     return {
         perfil: {
@@ -102,46 +119,58 @@ const obtenerPerfil = async ({ usuarioId, visitanteId, base, query }) => {
             foto: fotoDe(base, f),
             foto_portada: urlPublica(base, f.foto_portada),
             verificado: Boolean(f.correo_verificado),
-            publicados: f.publicados,
-            vendidos: f.vendidos,
-            likes: f.likes,
-            ubicacion: esNegocio ? ubicacionTexto(f.ciudad, f.sector) : anuncios[0]?.ubicacion || null,
-            miembroDesde: new Date(f.creado_en).toLocaleDateString('es-EC', { month: 'long', year: 'numeric' }),
-            seguidores: f.seguidores,
-            seguidos: f.seguidos,
+            // Con las ventas ocultas, "publicados" pasa a contar solo los disponibles
+            // para que el cliente no pueda deducir cuántas hubo restando.
+            publicados: verVendidos ? f.publicados : f.disponibles,
+            vendidos: verVendidos ? f.vendidos : 0,
+            likes: ve('me_gusta') ? f.likes : 0,
+            ubicacion: ve('ubicacion')
+                ? esNegocio
+                    ? ubicacionTexto(f.ciudad, f.sector)
+                    : anuncios[0]?.ubicacion || null
+                : null,
+            miembroDesde: ve('miembro_desde')
+                ? new Date(f.creado_en).toLocaleDateString('es-EC', { month: 'long', year: 'numeric' })
+                : null,
+            seguidores: ve('seguidores') ? f.seguidores : 0,
+            seguidos: ve('seguidores') ? f.seguidos : 0,
             loSigues: Boolean(f.lo_sigues),
             contacto: whatsapp ? 'whatsapp' : telefono ? 'telefono' : null,
             categoria: esNegocio ? f.categoria_nombre || null : null,
             descripcion: esNegocio ? f.descripcion_breve || null : null,
-            direccion: esNegocio ? f.direccion_local || null : null,
-            horario: esNegocio ? horarioPublico(f.horario_atencion) : [],
+            direccion: verDireccion ? f.direccion_local || null : null,
+            horario: esNegocio && ve('horario') ? horarioPublico(f.horario_atencion) : [],
             entregaDomicilio: esNegocio ? Boolean(f.entrega_domicilio) : false,
             zonaCobertura: esNegocio ? f.zona_cobertura || null : null,
             telefono,
             whatsapp,
-            latitud: esNegocio && f.latitud !== null ? Number(f.latitud) : null,
-            longitud: esNegocio && f.longitud !== null ? Number(f.longitud) : null,
-            redes: esNegocio ? redesPublicas(f.redes_sociales) : [],
+            latitud: verDireccion && f.latitud !== null ? Number(f.latitud) : null,
+            longitud: verDireccion && f.longitud !== null ? Number(f.longitud) : null,
+            redes: esNegocio && ve('redes') ? redesPublicas(f.redes_sociales) : [],
             // Aún no hay sistema de valoraciones.
             valoracion: null,
             numeroValoraciones: 0,
+            // El cliente lo usa para no pintar secciones vacías y, al dueño, para
+            // marcarle qué partes no ven los demás.
+            visibilidad: privacidad,
         },
         anuncios,
-        // 'publicados' = total de anuncios listables (mismo filtro que la consulta).
-        paginacion: infoPagina(pagina, f.publicados),
+        // Total de anuncios listables con el mismo filtro que la consulta.
+        paginacion: infoPagina(pagina, verVendidos ? f.publicados : f.disponibles),
     };
 };
 
 // Solo los anuncios (páginas siguientes), sin volver a pedir todo el perfil.
-const listarAnuncios = async ({ usuarioId, base, query }) => {
+const listarAnuncios = async ({ usuarioId, visitanteId, base, query }) => {
     validarId(usuarioId);
     const f = await perfilModel.obtenerPerfilPublico(usuarioId, null);
     if (!f) throw error('Usuario no encontrado', 404);
+    const verVendidos = visibleParaVisitante(f, visitanteId).ve('vendidos');
     const pagina = paginacionDe(query);
-    const filas = await perfilModel.listarAnunciosPublicos(usuarioId, pagina);
+    const filas = await perfilModel.listarAnunciosPublicos(usuarioId, pagina, !verVendidos);
     return {
         anuncios: filas.map((a) => anuncioPublico(base, a)),
-        paginacion: infoPagina(pagina, f.publicados),
+        paginacion: infoPagina(pagina, verVendidos ? f.publicados : f.disponibles),
     };
 };
 
@@ -160,9 +189,13 @@ const dejarDeSeguir = async ({ seguidorId, seguidoId }) => {
 };
 
 // direccion = 'seguidores' | 'seguidos'. Paginación con ?limite=20&offset=0.
-const listarRelacion = async ({ usuarioId, direccion, query, base }) => {
+const listarRelacion = async ({ usuarioId, visitanteId, direccion, query, base }) => {
     validarId(usuarioId);
-    if (!(await perfilModel.existeActivo(usuarioId))) throw error('Usuario no encontrado', 404);
+    const f = await perfilModel.obtenerPerfilPublico(usuarioId, null);
+    if (!f) throw error('Usuario no encontrado', 404);
+    if (!visibleParaVisitante(f, visitanteId).ve('seguidores')) {
+        throw error('Este usuario mantiene privadas sus listas de seguidores', 403);
+    }
     const pagina = paginacionDe(query);
     const [filas, total] = await Promise.all([
         perfilModel.listarRelacion(usuarioId, direccion, pagina),
