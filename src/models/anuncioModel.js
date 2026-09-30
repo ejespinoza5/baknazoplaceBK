@@ -242,7 +242,29 @@ const feed = async (f) => {
     if (f.autorUsuarioId) where.push(`a.autor_usuario_id = ${p(f.autorUsuarioId)}`);
     if (f.precioMin !== null) where.push(`a.precio >= ${p(f.precioMin)}`);
     if (f.precioMax !== null) where.push(`a.precio <= ${p(f.precioMax)}`);
-    if (f.q) where.push(`to_tsvector('spanish', a.titulo) @@ websearch_to_tsquery('spanish', ${p(f.q)})`);
+    // Búsqueda tolerante. El texto llega ya en minúsculas y sin tildes (qn), y
+    // un anuncio coincide si pasa cualquiera de estas tres pruebas:
+    //  1. Contiene el texto tal cual en el título, la descripción o la categoría
+    //     ("iph" encuentra "iPhone"): cubre las palabras a medias.
+    //  2. Se parece por trigramas a una parte del título ("computadra" ~
+    //     "computadora"): cubre los errores de tipeo.
+    //  3. Coincide por raíz de palabra en español ("zapatos" ~ "zapato").
+    let relevancia = '0::float8';
+    if (f.q) {
+        const qn = p(f.q);
+        const titulo = 'f_unaccent(lower(a.titulo))';
+        where.push(`(
+            ${titulo} LIKE '%' || ${qn} || '%'
+            OR f_unaccent(lower(coalesce(a.descripcion, ''))) LIKE '%' || ${qn} || '%'
+            OR f_unaccent(lower(c.nombre)) LIKE '%' || ${qn} || '%'
+            OR word_similarity(${qn}, ${titulo}) >= 0.4
+            OR to_tsvector('spanish', ${titulo}) @@ plainto_tsquery('spanish', ${qn})
+        )`);
+        // Lo que coincide en el título pesa más que lo que solo sale en la descripción.
+        relevancia = `(word_similarity(${qn}, ${titulo})
+            + CASE WHEN ${titulo} LIKE '%' || ${qn} || '%' THEN 1 ELSE 0 END
+            + CASE WHEN ${titulo} LIKE ${qn} || '%' THEN 0.5 ELSE 0 END)::float8`;
+    }
     // Detalle de cada pilar: los alias ap/asv/ae vienen de SELECT_BASE.
     if (f.condicion) where.push(`ap.condicion = ${p(f.condicion)}`);
     if (f.modalidadCobro) where.push(`asv.modalidad_cobro = ${p(f.modalidadCobro)}`);
@@ -266,6 +288,9 @@ const feed = async (f) => {
     if (f.orden === 'cercanos') {
         if (f.cursor) filtrosExternos.push(`(t.distancia_km, t.id) > (${p(f.cursor.d)}::float8, ${p(f.cursor.id)}::bigint)`);
         ordenSql = 't.distancia_km ASC, t.id ASC';
+    } else if (f.orden === 'relevancia' && f.q) {
+        if (f.cursor) filtrosExternos.push(`(t.relevancia, t.id) < (${p(f.cursor.r)}::float8, ${p(f.cursor.id)}::bigint)`);
+        ordenSql = 't.relevancia DESC, t.id DESC';
     } else if (f.orden === 'precio_asc') {
         if (f.cursor) filtrosExternos.push(`(t.precio_orden, t.id) > (${p(f.cursor.v)}::numeric, ${p(f.cursor.id)}::bigint)`);
         ordenSql = 't.precio_orden ASC, t.id ASC';
@@ -283,7 +308,7 @@ const feed = async (f) => {
         SELECT * FROM (
             ${SELECT_BASE.replace(
                 'SELECT a.*,',
-                `SELECT a.*, ${distancia} AS distancia_km, ${precioOrden} AS precio_orden, ${FOTOS_JSON},`
+                `SELECT a.*, ${distancia} AS distancia_km, ${precioOrden} AS precio_orden, ${relevancia} AS relevancia, ${FOTOS_JSON},`
             )}
             WHERE ${where.join(' AND ')}
         ) t

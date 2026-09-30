@@ -969,3 +969,21 @@ CREATE TABLE IF NOT EXISTS anuncio_vistas (
     ultimo_en   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (anuncio_id, visitante)
 );
+
+
+-- ============================================================
+-- Búsqueda tolerante: sin tildes, palabras a medias y errores de tipeo
+-- pg_trgm compara por trigramas ("iphon" ~ "iphone", "computadra" ~
+-- "computadora"); unaccent quita tildes ("telefono" = "teléfono").
+-- f_unaccent existe porque unaccent() no es IMMUTABLE y un índice lo exige.
+-- ============================================================
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
+CREATE OR REPLACE FUNCTION f_unaccent(text) RETURNS text
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+    AS $$ SELECT public.unaccent('public.unaccent'::regdictionary, $1) $$;
+
+-- Título normalizado (minúsculas y sin tildes) indexado por trigramas.
+CREATE INDEX IF NOT EXISTS idx_anuncios_titulo_trgm
+    ON anuncios USING gin (f_unaccent(lower(titulo)) gin_trgm_ops);

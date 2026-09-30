@@ -449,6 +449,7 @@ const decodificarCursor = (cursor, orden) => {
         if (orden === 'recientes' && idValido && typeof c.p === 'string' && !Number.isNaN(Date.parse(c.p))) return c;
         // Precio: se guarda como texto para no perder los decimales de NUMERIC.
         if ((orden === 'precio_asc' || orden === 'precio_desc') && idValido && /^-?\d+(\.\d+)?$/.test(String(c.v))) return c;
+        if (orden === 'relevancia' && idValido && typeof c.r === 'number' && Number.isFinite(c.r)) return c;
         // 'mios': creado_en tal como lo imprime Postgres (con microsegundos y zona horaria).
         if ((orden === 'mios' || orden === 'guardados') && idValido && typeof c.c === 'string' && REGEX_TIMESTAMP_PG.test(c.c)) return c;
     } catch (e) {
@@ -461,6 +462,7 @@ const codificarCursor = (fila, orden) => {
     let c;
     if (orden === 'cercanos') c = { d: fila.distancia_km, id: String(fila.id) };
     else if (orden === 'precio_asc' || orden === 'precio_desc') c = { v: String(fila.precio_orden), id: String(fila.id) };
+    else if (orden === 'relevancia') c = { r: Number(fila.relevancia), id: String(fila.id) };
     else if (orden === 'mios') c = { c: fila.creado_en_exacto, id: String(fila.id) };
     else if (orden === 'guardados') c = { c: fila.guardado_en_exacto, id: String(fila.id) };
     else c = { p: new Date(fila.publicado_en).toISOString(), id: String(fila.id) };
@@ -496,7 +498,7 @@ const paginar = (filas, limite, orden) => {
 
 const listarFeed = async ({ query, usuarioId, base }) => {
     const orden = query.orden || 'recientes';
-    if (!['recientes', 'cercanos', 'precio_asc', 'precio_desc'].includes(orden)) {
+    if (!['recientes', 'cercanos', 'precio_asc', 'precio_desc', 'relevancia'].includes(orden)) {
         throw error("Parámetro 'orden' inválido", 400);
     }
 
@@ -527,7 +529,17 @@ const listarFeed = async ({ query, usuarioId, base }) => {
 
     const limite = limiteDePagina(query.limite);
 
-    const q = texto(query.q);
+    // Minúsculas, sin tildes y sin espacios de más: así "Teléfono  Samsung" y
+    // "telefono samsung" buscan lo mismo. La base hace lo mismo con los títulos.
+    const q = texto(query.q)
+        ?.normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim()
+        // % y _ son comodines de LIKE: se escapan para buscarse como texto normal.
+        .replace(/[\\%_]/g, '\\$&');
+    if (orden === 'relevancia' && !q) throw error("El orden 'relevancia' requiere 'q'", 400);
     const filas = await anuncioModel.feed({
         pilar: query.pilar || null,
         categoriaId,
