@@ -1,5 +1,19 @@
+const crypto = require('crypto');
+const env = require('../config/env');
 const anuncioService = require('../services/anuncioService');
 const { parsearJson } = require('../utils/validaciones');
+
+// Quién está mirando, para contar una vista por persona. Con sesión, su id;
+// sin ella, una huella de IP + navegador con sal secreta: nunca se guarda la IP
+// en claro y no se puede revertir probando direcciones.
+const visitanteDe = (req) =>
+    req.usuario?.id
+        ? `u:${req.usuario.id}`
+        : `a:${crypto
+              .createHash('sha256')
+              .update(`${req.ip}|${req.get('user-agent') || ''}|${env.jwtSecret}`)
+              .digest('hex')
+              .slice(0, 40)}`;
 
 // Base para armar URLs absolutas de las fotos (/uploads/...).
 const baseUrl = (req) => `${req.protocol}://${req.get('host')}`;
@@ -68,6 +82,7 @@ const obtener = async (req, res, next) => {
         const anuncio = await anuncioService.obtener({
             idOSlug: req.params.id,
             usuarioId: req.usuario?.id || null,
+            visitante: visitanteDe(req),
             base: baseUrl(req),
         });
         res.json({ anuncio });
@@ -128,4 +143,57 @@ const quitarLike = async (req, res, next) => {
     }
 };
 
-module.exports = { crear, listar, listarMios, obtener, actualizar, eliminar, revelarContacto, darLike, quitarLike };
+const guardar = async (req, res, next) => {
+    try {
+        res.json(await anuncioService.guardar({ id: req.params.id, usuarioId: req.usuario.id }));
+    } catch (err) {
+        next(err);
+    }
+};
+
+const quitarGuardado = async (req, res, next) => {
+    try {
+        res.json(await anuncioService.quitarGuardado({ id: req.params.id, usuarioId: req.usuario.id }));
+    } catch (err) {
+        next(err);
+    }
+};
+
+const listarGuardados = async (req, res, next) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.json(await anuncioService.listarGuardados({ usuarioId: req.usuario.id, query: req.query, base: baseUrl(req) }));
+    } catch (err) {
+        next(err);
+    }
+};
+
+const registrarVistas = async (req, res, next) => {
+    try {
+        res.json(
+            await anuncioService.registrarVistas({
+                ids: (req.body || {}).ids,
+                visitante: visitanteDe(req),
+                usuarioId: req.usuario?.id || null,
+            })
+        );
+    } catch (err) {
+        next(err);
+    }
+};
+
+module.exports = {
+    crear,
+    listar,
+    listarMios,
+    obtener,
+    actualizar,
+    eliminar,
+    revelarContacto,
+    darLike,
+    quitarLike,
+    guardar,
+    quitarGuardado,
+    listarGuardados,
+    registrarVistas,
+};

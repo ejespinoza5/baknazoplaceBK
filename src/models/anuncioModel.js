@@ -349,6 +349,76 @@ const idsConLike = async (usuarioId, anuncioIds) => {
     return new Set(rows.map((r) => String(r.anuncio_id)));
 };
 
+// ---------- Guardados ----------
+
+// Idempotentes, igual que el like: guardar dos veces no duplica nada.
+const guardar = async (anuncioId, usuarioId) => {
+    await pool.query(
+        `INSERT INTO anuncio_guardados (anuncio_id, usuario_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [anuncioId, usuarioId]
+    );
+};
+
+const quitarGuardado = async (anuncioId, usuarioId) => {
+    await pool.query(`DELETE FROM anuncio_guardados WHERE anuncio_id = $1 AND usuario_id = $2`, [
+        anuncioId,
+        usuarioId,
+    ]);
+};
+
+// De los ids de una página, cuáles guardó el usuario.
+const idsGuardados = async (usuarioId, anuncioIds) => {
+    if (!usuarioId || anuncioIds.length === 0) return new Set();
+    const { rows } = await pool.query(
+        `SELECT anuncio_id FROM anuncio_guardados WHERE usuario_id = $1 AND anuncio_id = ANY($2::bigint[])`,
+        [usuarioId, anuncioIds]
+    );
+    return new Set(rows.map((r) => String(r.anuncio_id)));
+};
+
+// Los guardados del usuario, del más reciente al más antiguo. Incluye los ya
+// vendidos o pausados (para poder avisar "ya se vendió"), no los eliminados.
+const listarGuardados = async ({ usuarioId, cursor, limite }) => {
+    const { rows } = await pool.query(
+        `${SELECT_BASE.replace(
+            'SELECT a.*,',
+            `SELECT a.*, g.creado_en::text AS guardado_en_exacto, g.creado_en AS guardado_en, ${FOTOS_JSON},`
+        ).replace('FROM anuncios a', 'FROM anuncio_guardados g JOIN anuncios a ON a.id = g.anuncio_id')}
+         WHERE g.usuario_id = $1 AND a.eliminado_en IS NULL
+           AND ($2::timestamptz IS NULL OR (g.creado_en, a.id) < ($2::timestamptz, $3::bigint))
+         ORDER BY g.creado_en DESC, a.id DESC
+         LIMIT $4`,
+        [usuarioId, cursor ? cursor.c : null, cursor ? cursor.id : null, limite + 1]
+    );
+    return rows;
+};
+
+// ---------- Vistas ----------
+
+// Una vista cuenta una vez por persona y anuncio cada 24 horas, y nunca la del
+// dueño. `visitante` es 'u:<id de usuario>' con sesión o 'a:<huella>' sin ella.
+// Devuelve cuántas vistas nuevas se sumaron.
+const registrarVistas = async (anuncioIds, visitante, usuarioId) => {
+    if (anuncioIds.length === 0) return 0;
+    const { rowCount } = await pool.query(
+        `WITH candidatos AS (
+             SELECT a.id FROM anuncios a
+             WHERE a.id = ANY($1::bigint[]) AND ${VISIBLE}
+               AND ($3::uuid IS NULL OR a.autor_usuario_id <> $3::uuid)
+         ), marca AS (
+             INSERT INTO anuncio_vistas (anuncio_id, visitante, ultimo_en)
+             SELECT id, $2, NOW() FROM candidatos
+             ON CONFLICT (anuncio_id, visitante) DO UPDATE SET ultimo_en = NOW()
+                 WHERE anuncio_vistas.ultimo_en < NOW() - INTERVAL '24 hours'
+             RETURNING anuncio_id
+         )
+         UPDATE anuncios a SET vistas = a.vistas + 1
+         FROM marca WHERE a.id = marca.anuncio_id`,
+        [anuncioIds, visitante, usuarioId || null]
+    );
+    return rowCount;
+};
+
 // ---------- Idempotencia ----------
 
 const buscarIdempotencia = async (usuarioId, clave) => {
@@ -390,6 +460,11 @@ module.exports = {
     quitarLike,
     estadoLike,
     idsConLike,
+    guardar,
+    quitarGuardado,
+    idsGuardados,
+    listarGuardados,
+    registrarVistas,
     buscarIdempotencia,
     registrarIdempotencia,
 };

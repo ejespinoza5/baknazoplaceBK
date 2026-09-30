@@ -940,3 +940,32 @@ CREATE TRIGGER trg_postulaciones_actualizado
 -- Orden por precio (más baratos / más caros) sin recorrer toda la tabla.
 CREATE INDEX IF NOT EXISTS idx_anuncios_precio ON anuncios (precio, id)
     WHERE estado = 'PUBLICADO' AND eliminado_en IS NULL AND NOT vendido;
+
+
+-- ============================================================
+-- Guardados: los anuncios que cada persona se guarda para después
+-- ============================================================
+CREATE TABLE IF NOT EXISTS anuncio_guardados (
+    anuncio_id  BIGINT      NOT NULL REFERENCES anuncios(id) ON DELETE CASCADE,
+    usuario_id  UUID        NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    creado_en   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (anuncio_id, usuario_id)
+);
+
+-- "Mis guardados" de más reciente a más antiguo.
+CREATE INDEX IF NOT EXISTS idx_guardados_usuario ON anuncio_guardados (usuario_id, creado_en DESC);
+
+
+-- ============================================================
+-- Vistas reales: una por persona y anuncio cada 24 horas
+-- 'visitante' es 'u:<id de usuario>' con sesión, o 'a:<huella>' sin ella
+-- (hash de IP + navegador, nunca la IP en claro). La del dueño no cuenta.
+-- anuncios.vistas sigue siendo el total que se muestra; esta tabla solo
+-- evita que recargar la página infle el número.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS anuncio_vistas (
+    anuncio_id  BIGINT      NOT NULL REFERENCES anuncios(id) ON DELETE CASCADE,
+    visitante   VARCHAR(80) NOT NULL,
+    ultimo_en   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (anuncio_id, visitante)
+);

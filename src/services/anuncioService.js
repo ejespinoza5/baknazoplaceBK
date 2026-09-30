@@ -406,7 +406,7 @@ const crear = async ({ usuario, datos, archivos, idempotencyKey, base }) => {
 };
 
 // Acepta id numérico o slug.
-const obtener = async ({ idOSlug, usuarioId, base }) => {
+const obtener = async ({ idOSlug, usuarioId, visitante, base }) => {
     const fila = /^\d+$/.test(idOSlug)
         ? await anuncioModel.buscarPorId(idOSlug)
         : await anuncioModel.buscarPorSlug(idOSlug);
@@ -417,17 +417,24 @@ const obtener = async ({ idOSlug, usuarioId, base }) => {
     const visible = estaVisible(fila);
     if (!visible && !esMio) throw error('Anuncio no encontrado', 404);
 
-    if (visible && !esMio) {
-        anuncioModel.incrementarVistas(fila.id).catch(() => {});
+    // Abrir la ficha es una vista, pero solo una por persona cada 24 h: recargar
+    // no infla el número. La del dueño no cuenta (lo filtra el modelo).
+    if (visible && !esMio && visitante) {
+        anuncioModel.registrarVistas([fila.id], visitante, usuarioId).catch(() => {});
     }
 
-    const [fotos, conLike, postulacion] = await Promise.all([
+    const [fotos, conLike, guardados, postulacion] = await Promise.all([
         anuncioModel.listarFotos(fila.id),
         anuncioModel.idsConLike(usuarioId, [fila.id]),
+        anuncioModel.idsGuardados(usuarioId, [fila.id]),
         // Solo empleo: si quien mira ya se postuló, o cuántas tiene el dueño.
         postulacionService.infoParaAnuncio(fila, usuarioId),
     ]);
-    return { ...aAnuncio(fila, fotos, base, esMio, conLike.has(String(fila.id))), ...postulacion };
+    return {
+        ...aAnuncio(fila, fotos, base, esMio, conLike.has(String(fila.id))),
+        guardado: guardados.has(String(fila.id)),
+        ...postulacion,
+    };
 };
 
 // ---------- Feed ----------
@@ -443,7 +450,7 @@ const decodificarCursor = (cursor, orden) => {
         // Precio: se guarda como texto para no perder los decimales de NUMERIC.
         if ((orden === 'precio_asc' || orden === 'precio_desc') && idValido && /^-?\d+(\.\d+)?$/.test(String(c.v))) return c;
         // 'mios': creado_en tal como lo imprime Postgres (con microsegundos y zona horaria).
-        if (orden === 'mios' && idValido && typeof c.c === 'string' && REGEX_TIMESTAMP_PG.test(c.c)) return c;
+        if ((orden === 'mios' || orden === 'guardados') && idValido && typeof c.c === 'string' && REGEX_TIMESTAMP_PG.test(c.c)) return c;
     } catch (e) {
         // cursor corrupto
     }
@@ -455,6 +462,7 @@ const codificarCursor = (fila, orden) => {
     if (orden === 'cercanos') c = { d: fila.distancia_km, id: String(fila.id) };
     else if (orden === 'precio_asc' || orden === 'precio_desc') c = { v: String(fila.precio_orden), id: String(fila.id) };
     else if (orden === 'mios') c = { c: fila.creado_en_exacto, id: String(fila.id) };
+    else if (orden === 'guardados') c = { c: fila.guardado_en_exacto, id: String(fila.id) };
     else c = { p: new Date(fila.publicado_en).toISOString(), id: String(fila.id) };
     return Buffer.from(JSON.stringify(c)).toString('base64url');
 };
@@ -542,7 +550,11 @@ const listarFeed = async ({ query, usuarioId, base }) => {
     });
 
     const { filas: pagina, pagina: infoPagina } = paginar(filas, limite, orden);
-    const conLike = await anuncioModel.idsConLike(usuarioId, pagina.map((f) => f.id));
+    const ids = pagina.map((f) => f.id);
+    const [conLike, guardados] = await Promise.all([
+        anuncioModel.idsConLike(usuarioId, ids),
+        anuncioModel.idsGuardados(usuarioId, ids),
+    ]);
     return {
         // El Feed lleva `esMio` para que la lista no le ofrezca al dueño un chat
         // con su propio anuncio. Sin sesión sale false, que es lo mismo que no
@@ -551,6 +563,7 @@ const listarFeed = async ({ query, usuarioId, base }) => {
         items: pagina.map((f) => ({
             ...aItemFeed(f, base, conLike.has(String(f.id))),
             esMio: Boolean(usuarioId) && f.autor_usuario_id === usuarioId,
+            guardado: guardados.has(String(f.id)),
         })),
         pagina: infoPagina,
     };
@@ -747,7 +760,64 @@ const quitarLike = async ({ id, usuarioId }) => {
     return anuncioModel.estadoLike(fila.id, usuarioId);
 };
 
+// ---------- Guardados ----------
+
+// Guardar solo lo que se puede ver. Quitar, siempre (aunque ya se haya vendido).
+const guardar = async ({ id, usuarioId }) => {
+    if (!/^\d+$/.test(String(id))) throw error('Anuncio no encontrado', 404);
+    const fila = await anuncioModel.buscarPorId(id);
+    if (!fila || !estaVisible(fila)) throw error('Anuncio no encontrado', 404);
+    await anuncioModel.guardar(fila.id, usuarioId);
+    return { guardado: true };
+};
+
+const quitarGuardado = async ({ id, usuarioId }) => {
+    if (!/^\d+$/.test(String(id))) throw error('Anuncio no encontrado', 404);
+    await anuncioModel.quitarGuardado(id, usuarioId);
+    return { guardado: false };
+};
+
+// Incluye los vendidos y pausados: quien los guardó tiene que enterarse de que
+// ya no están disponibles, no verlos desaparecer sin explicación.
+const listarGuardados = async ({ usuarioId, query, base }) => {
+    const limite = limiteDePagina(query.limite);
+    const filas = await anuncioModel.listarGuardados({
+        usuarioId,
+        cursor: query.cursor ? decodificarCursor(query.cursor, 'guardados') : null,
+        limite,
+    });
+    const { filas: pagina, pagina: infoPagina } = paginar(filas, limite, 'guardados');
+    const conLike = await anuncioModel.idsConLike(usuarioId, pagina.map((f) => f.id));
+    return {
+        items: pagina.map((f) => ({
+            ...aItemFeed(f, base, conLike.has(String(f.id))),
+            esMio: f.autor_usuario_id === usuarioId,
+            guardado: true,
+            guardadoEn: f.guardado_en,
+            // 'disponible' resume lo que importa a quien guardó: si todavía se puede comprar.
+            disponible: estaVisible(f) && !f.vendido,
+            estado: f.estado,
+        })),
+        pagina: infoPagina,
+    };
+};
+
+// ---------- Vistas ----------
+
+// POST /api/anuncios/vistas { ids }: las publicaciones que alguien vio en la
+// lista (sin abrirlas). Máximo 50 por llamada; cada una cuenta una vez al día.
+const registrarVistas = async ({ ids, visitante, usuarioId }) => {
+    if (!Array.isArray(ids)) throw error("'ids' debe ser una lista", 400);
+    const limpios = [...new Set(ids.map(String).filter((x) => /^\d{1,18}$/.test(x)))].slice(0, 50);
+    const sumadas = await anuncioModel.registrarVistas(limpios, visitante, usuarioId);
+    return { registradas: sumadas };
+};
+
 module.exports = {
+    guardar,
+    quitarGuardado,
+    listarGuardados,
+    registrarVistas,
     crear,
     obtener,
     listarFeed,

@@ -57,6 +57,8 @@ module.exports = {
             message: 'Demasiadas acciones de seguir. Espera un momento.',
         },
     }),
+    // Vistas desde la lista: por IP; una sesión normal hace unas pocas por minuto.
+    limitadorVistas: crearLimitador(15, 300, 'Demasiadas solicitudes. Intenta más tarde.'),
     // Postularse sube un PDF: por usuario, y bastante más bajo que un like.
     limitadorPostulacion: rateLimit({
         windowMs: 60 * 60 * 1000,

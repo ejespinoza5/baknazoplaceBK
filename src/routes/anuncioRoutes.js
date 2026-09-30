@@ -9,6 +9,7 @@ const {
     limitadorContacto,
     limitadorLike,
     limitadorPostulacion,
+    limitadorVistas,
 } = require('../middlewares/rateLimiter');
 
 // Feed público. La sesión es opcional: sin token se ve igual, y con token el
@@ -17,6 +18,13 @@ router.get('/', autenticacionOpcional, anuncioController.listar);
 
 // "Mis anuncios" (va antes de '/:id' para que 'mios' no se tome como id)
 router.get('/mios', requiereAutenticacion, anuncioController.listarMios);
+
+// Guardados de quien tiene sesión (también antes de '/:id').
+router.get('/guardados', requiereAutenticacion, anuncioController.listarGuardados);
+
+// Vistas de la lista: publicaciones que se vieron en pantalla sin abrirlas.
+// Sesión opcional: sin ella cuenta por huella anónima.
+router.post('/vistas', autenticacionOpcional, limitadorVistas, anuncioController.registrarVistas);
 
 // Publicar: un solo multipart (campo 'datos' JSON + 'fotos' 0..6). La autenticación va antes de multer.
 router.post('/', requiereAutenticacion, limitadorPublicacion, uploadFotosAnuncio, anuncioController.crear);
@@ -36,6 +44,10 @@ router.post('/:id/contacto', requiereAutenticacion, limitadorContacto, anuncioCo
 // nunca la URL, así que nadie puede quitar el like de otro.
 router.post('/:id/likes', requiereAutenticacion, limitadorLike, anuncioController.darLike);
 router.delete('/:id/likes/me', requiereAutenticacion, limitadorLike, anuncioController.quitarLike);
+
+// Guardar para después. El usuario lo pone el token, igual que el like.
+router.post('/:id/guardado', requiereAutenticacion, limitadorLike, anuncioController.guardar);
+router.delete('/:id/guardado', requiereAutenticacion, limitadorLike, anuncioController.quitarGuardado);
 
 // Postularse a una vacante con el CV en PDF (campo 'cv' + 'mensaje' + 'telefono').
 router.post(
