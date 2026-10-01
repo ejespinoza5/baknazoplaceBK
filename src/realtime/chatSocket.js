@@ -9,7 +9,8 @@ const hub = require('./hub');
 //   cliente → servidor: auth {token} · enviar {conversacionId, contenido, clienteId} · ping
 //   servidor → cliente: listo {usuarioId, noLeidos} · ack {clienteId, mensaje} ·
 //     error {clienteId?, codigo, mensaje} · mensaje {mensaje, remitente?, noLeidos?} ·
-//     entregado / leido {conversacionId, hastaId, fecha} · conversacion_leida · pong
+//     entregado / leido {conversacionId, hastaId, fecha} · conversacion_leida ·
+//     bloqueo {conversacionId, usuarioId, yoBloquee, meBloquearon} · pong
 //
 // El token NO va en la URL (quedaría en los logs del proxy): se manda en el
 // primer mensaje. Hasta entonces el socket no puede hacer nada más.
@@ -107,6 +108,7 @@ const enviarMensaje = async (ws, datos) => {
             conversacionId: datos.conversacionId,
             contenido: datos.contenido,
             clienteId,
+            base: ws.base,
             socketOrigen: ws,
         });
         enviarA(ws, { t: 'ack', clienteId, mensaje });
@@ -159,7 +161,12 @@ const adjuntarChat = (servidor) => {
         wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
     });
 
-    wss.on('connection', (ws) => {
+    wss.on('connection', (ws, req) => {
+        // La URL pública de la API, para las fotos de los anuncios. Detrás de
+        // Nginx el protocolo real llega en X-Forwarded-Proto (como req.protocol
+        // en Express con 'trust proxy').
+        const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() || (req.socket.encrypted ? 'https' : 'http');
+        ws.base = `${proto}://${req.headers.host}`;
         ws.usuarioId = null;
         ws.vivo = true;
         ws.envios = [];

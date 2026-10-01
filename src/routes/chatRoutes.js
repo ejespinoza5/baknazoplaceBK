@@ -17,4 +17,8 @@ router.get('/conversaciones/:id', chatController.obtener);
 router.get('/conversaciones/:id/mensajes', chatController.listarMensajes);
 router.post('/conversaciones/:id/leida', chatController.marcarLeida);
 
+// Bloquear { usuarioId } y desbloquear. Quien bloquea es siempre el del token.
+router.post('/bloqueos', limitadorChat, chatController.bloquear);
+router.delete('/bloqueos/:usuarioId', limitadorChat, chatController.desbloquear);
+
 module.exports = router;

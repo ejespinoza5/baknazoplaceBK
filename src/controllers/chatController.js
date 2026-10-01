@@ -35,7 +35,14 @@ const iniciar = async (req, res, next) => {
 const listarMensajes = async (req, res, next) => {
     try {
         sinCache(res);
-        res.json(await chatService.listarMensajes({ usuarioId: req.usuario.id, id: req.params.id, query: req.query }));
+        res.json(
+            await chatService.listarMensajes({
+                usuarioId: req.usuario.id,
+                id: req.params.id,
+                query: req.query,
+                base: baseUrl(req),
+            })
+        );
     } catch (err) {
         next(err);
     }
@@ -58,4 +65,21 @@ const contarNoLeidos = async (req, res, next) => {
     }
 };
 
-module.exports = { listar, obtener, iniciar, listarMensajes, marcarLeida, contarNoLeidos };
+// El bloqueado lo dice la URL o el cuerpo; quien bloquea, siempre el token.
+const bloquear = async (req, res, next) => {
+    try {
+        res.json(await chatService.bloquear({ usuarioId: req.usuario.id, objetivoId: (req.body || {}).usuarioId }));
+    } catch (err) {
+        next(err);
+    }
+};
+
+const desbloquear = async (req, res, next) => {
+    try {
+        res.json(await chatService.desbloquear({ usuarioId: req.usuario.id, objetivoId: req.params.usuarioId }));
+    } catch (err) {
+        next(err);
+    }
+};
+
+module.exports = { listar, obtener, iniciar, listarMensajes, marcarLeida, contarNoLeidos, bloquear, desbloquear };

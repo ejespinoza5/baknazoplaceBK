@@ -991,19 +991,20 @@ CREATE INDEX IF NOT EXISTS idx_anuncios_titulo_trgm
 
 -- ============================================================
 -- Chat: conversaciones privadas entre dos personas
--- Una conversación une a quien escribe primero (iniciador) con quien
--- publicó (destinatario) y, si nació desde un anuncio de productos o
--- servicios, a ese anuncio. Hay una sola por par de personas y anuncio:
--- el índice único usa LEAST/GREATEST para que A→B y B→A sean la misma.
+-- Hay UNA conversación por par de personas (el índice único usa LEAST/
+-- GREATEST para que A→B y B→A sean la misma), aunque se hable de varios
+-- anuncios: conversaciones.anuncio_id es el anuncio del que se habla ahora,
+-- y cada mensaje guarda en mensajes.anuncio_id sobre cuál se escribió.
 -- Los mensajes son texto plano; el frontend nunca los pinta como HTML.
+-- Esta sección también migra la primera versión del chat (una conversación
+-- por anuncio): fusiona las del mismo par sin perder ningún mensaje.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS conversaciones (
     id                 BIGSERIAL PRIMARY KEY,
     iniciador_id       UUID   NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
     destinatario_id    UUID   NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-    -- Los anuncios se borran en suave; si alguno se borrara de verdad, su chat
-    -- se va con él para no chocar con la conversación directa del mismo par.
-    anuncio_id         BIGINT REFERENCES anuncios(id) ON DELETE CASCADE,
+    -- El anuncio del que se habla ahora. Si se borrara, la conversación sigue.
+    anuncio_id         BIGINT REFERENCES anuncios(id) ON DELETE SET NULL,
     -- Copia del último mensaje para listar sin recorrer 'mensajes'.
     ultimo_mensaje_id  BIGINT,
     ultimo_mensaje_en  TIMESTAMPTZ,
@@ -1012,10 +1013,78 @@ CREATE TABLE IF NOT EXISTS conversaciones (
     CONSTRAINT conversacion_entre_dos CHECK (iniciador_id <> destinatario_id)
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_conversaciones_par_anuncio ON conversaciones (
+-- Primera versión: al borrar un anuncio se borraba su conversación. Con una
+-- conversación por par eso borraría todo el historial de esas dos personas.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'conversaciones_anuncio_id_fkey' AND confdeltype = 'c') THEN
+        ALTER TABLE conversaciones DROP CONSTRAINT conversaciones_anuncio_id_fkey;
+        ALTER TABLE conversaciones ADD CONSTRAINT conversaciones_anuncio_id_fkey
+            FOREIGN KEY (anuncio_id) REFERENCES anuncios(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS mensajes (
+    id               BIGSERIAL PRIMARY KEY,
+    conversacion_id  BIGINT        NOT NULL REFERENCES conversaciones(id) ON DELETE CASCADE,
+    remitente_id     UUID          NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    contenido        VARCHAR(2000) NOT NULL CHECK (char_length(btrim(contenido)) > 0),
+    -- Lo genera el navegador al enviar: si el envío se reintenta tras una
+    -- reconexión, el UNIQUE evita guardar el mismo mensaje dos veces.
+    cliente_id       VARCHAR(64)   NOT NULL,
+    -- Sobre qué anuncio se escribió (lo pone el servidor, no el navegador).
+    anuncio_id       BIGINT        REFERENCES anuncios(id) ON DELETE SET NULL,
+    creado_en        TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    -- Llegó a algún dispositivo del destinatario / lo abrió en la conversación.
+    entregado_en     TIMESTAMPTZ,
+    leido_en         TIMESTAMPTZ,
+    CONSTRAINT leido_implica_entregado CHECK (leido_en IS NULL OR entregado_en IS NOT NULL),
+    UNIQUE (remitente_id, cliente_id)
+);
+
+ALTER TABLE mensajes
+    ADD COLUMN IF NOT EXISTS anuncio_id BIGINT REFERENCES anuncios(id) ON DELETE SET NULL;
+
+-- Migración de la primera versión (una conversación por anuncio). Solo corre
+-- si todavía existe su índice, así que ejecutar el script otra vez no la repite.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'uq_conversaciones_par_anuncio') THEN
+        -- 1) Cada mensaje recuerda el anuncio de la conversación en la que estaba.
+        UPDATE mensajes m SET anuncio_id = c.anuncio_id
+        FROM conversaciones c
+        WHERE c.id = m.conversacion_id AND m.anuncio_id IS NULL AND c.anuncio_id IS NOT NULL;
+
+        -- 2) La conversación más antigua de cada par se queda con los mensajes
+        --    de las demás, y las demás se borran (ya vacías).
+        CREATE TEMP TABLE chat_fusion AS
+        SELECT id,
+               MIN(id) OVER (PARTITION BY LEAST(iniciador_id, destinatario_id),
+                                          GREATEST(iniciador_id, destinatario_id)) AS destino
+        FROM conversaciones;
+        DELETE FROM chat_fusion WHERE id = destino;
+
+        UPDATE mensajes m SET conversacion_id = f.destino FROM chat_fusion f WHERE m.conversacion_id = f.id;
+        DELETE FROM conversaciones c USING chat_fusion f WHERE c.id = f.id;
+        DROP TABLE chat_fusion;
+
+        -- 3) Último mensaje y anuncio del que se habló al final, ya fusionados.
+        UPDATE conversaciones c
+        SET ultimo_mensaje_id = u.id,
+            ultimo_mensaje_en = u.creado_en,
+            anuncio_id = COALESCE(u.anuncio_id, c.anuncio_id)
+        FROM (SELECT DISTINCT ON (conversacion_id) conversacion_id, id, creado_en, anuncio_id
+              FROM mensajes
+              ORDER BY conversacion_id, id DESC) u
+        WHERE u.conversacion_id = c.id;
+
+        DROP INDEX uq_conversaciones_par_anuncio;
+    END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_conversaciones_par ON conversaciones (
     LEAST(iniciador_id, destinatario_id),
-    GREATEST(iniciador_id, destinatario_id),
-    COALESCE(anuncio_id, 0)
+    GREATEST(iniciador_id, destinatario_id)
 );
 -- La bandeja de cada participante, de la más reciente a la más antigua.
 CREATE INDEX IF NOT EXISTS idx_conversaciones_iniciador ON conversaciones (iniciador_id, ultimo_mensaje_en DESC);
@@ -1027,25 +1096,24 @@ CREATE TRIGGER trg_conversaciones_actualizado
     FOR EACH ROW
     EXECUTE FUNCTION set_actualizado_en();
 
-CREATE TABLE IF NOT EXISTS mensajes (
-    id               BIGSERIAL PRIMARY KEY,
-    conversacion_id  BIGINT        NOT NULL REFERENCES conversaciones(id) ON DELETE CASCADE,
-    remitente_id     UUID          NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-    contenido        VARCHAR(2000) NOT NULL CHECK (char_length(btrim(contenido)) > 0),
-    -- Lo genera el navegador al enviar: si el envío se reintenta tras una
-    -- reconexión, el UNIQUE evita guardar el mismo mensaje dos veces.
-    cliente_id       VARCHAR(64)   NOT NULL,
-    creado_en        TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-    -- Llegó a algún dispositivo del destinatario / lo abrió en la conversación.
-    entregado_en     TIMESTAMPTZ,
-    leido_en         TIMESTAMPTZ,
-    CONSTRAINT leido_implica_entregado CHECK (leido_en IS NULL OR entregado_en IS NOT NULL),
-    UNIQUE (remitente_id, cliente_id)
-);
-
 -- El historial se pagina hacia atrás por id.
 CREATE INDEX IF NOT EXISTS idx_mensajes_conversacion ON mensajes (conversacion_id, id DESC);
 -- Contador de no leídos: solo recorre lo que falta leer.
 CREATE INDEX IF NOT EXISTS idx_mensajes_sin_leer ON mensajes (conversacion_id, remitente_id) WHERE leido_en IS NULL;
 -- Acuses de entrega al conectarse: solo lo que todavía no llegó.
 CREATE INDEX IF NOT EXISTS idx_mensajes_sin_entregar ON mensajes (conversacion_id) WHERE entregado_en IS NULL;
+
+-- Bloqueos: quien bloquea deja de recibir mensajes de esa persona, y ninguno
+-- de los dos puede escribir en su conversación hasta que se desbloquee.
+CREATE TABLE IF NOT EXISTS bloqueos (
+    bloqueador_id  UUID        NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    bloqueado_id   UUID        NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    creado_en      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (bloqueador_id, bloqueado_id),
+    CONSTRAINT bloqueo_a_otro CHECK (bloqueador_id <> bloqueado_id)
+);
+
+-- "¿Me bloqueó?" se pregunta desde el lado del bloqueado.
+CREATE INDEX IF NOT EXISTS idx_bloqueos_bloqueado ON bloqueos (bloqueado_id);
+
+
