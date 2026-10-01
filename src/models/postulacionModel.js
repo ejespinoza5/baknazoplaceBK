@@ -71,6 +71,45 @@ const resumenRecibidas = async (duenoId) => {
     return { porEstado: porEstado.rows, porVacante: porVacante.rows };
 };
 
+// Las vacantes del dueño con su anuncio, sus cifras por estado y los últimos
+// cuatro candidatos (para las caras de la lista). Las abiertas primero.
+const listarVacantes = async (duenoId) => {
+    const { rows } = await pool.query(
+        `SELECT a.id, a.slug, a.titulo, a.estado, a.vendido, a.vendido_en, a.precio, a.moneda,
+                a.sector, a.vistas, a.publicado_en, a.creado_en,
+                c.nombre AS categoria_nombre, ca.nombre AS canton_nombre,
+                ae.jornada, ae.modalidad,
+                f0.storage_key AS portada_key,
+                COALESCE(cuentas.total, 0)::int AS total,
+                COALESCE(cuentas.por_estado, '{}'::json) AS por_estado,
+                COALESCE(recientes.lista, '[]'::json) AS recientes
+         FROM anuncios a
+         JOIN categorias_anuncio c ON c.id = a.categoria_id
+         JOIN cantones ca ON ca.codigo = a.canton_codigo
+         LEFT JOIN anuncio_empleo ae ON ae.anuncio_id = a.id
+         LEFT JOIN anuncio_fotos f0 ON f0.anuncio_id = a.id AND f0.orden = 0
+         LEFT JOIN LATERAL (
+             SELECT SUM(n)::int AS total, json_object_agg(estado, n) AS por_estado
+             FROM (SELECT estado, COUNT(*)::int AS n FROM postulaciones
+                   WHERE anuncio_id = a.id GROUP BY estado) e
+         ) cuentas ON TRUE
+         LEFT JOIN LATERAL (
+             SELECT json_agg(r) AS lista FROM (
+                 SELECT u.nombres, u.apellidos, u.foto_perfil
+                 FROM postulaciones p JOIN usuarios u ON u.id = p.postulante_id
+                 WHERE p.anuncio_id = a.id
+                 ORDER BY p.creado_en DESC, p.id DESC
+                 LIMIT 4
+             ) r
+         ) recientes ON TRUE
+         WHERE a.autor_usuario_id = $1 AND a.pilar = 'empleo' AND a.eliminado_en IS NULL
+         ORDER BY (a.estado = 'PUBLICADO' AND NOT a.vendido) DESC, a.creado_en DESC, a.id DESC
+         LIMIT 200`,
+        [duenoId]
+    );
+    return rows;
+};
+
 const listarEnviadas = async ({ postulanteId, limite, offset }) => {
     const { rows } = await pool.query(
         `${SELECT_BASE}
@@ -125,6 +164,7 @@ module.exports = {
     buscarPorId,
     listarRecibidas,
     resumenRecibidas,
+    listarVacantes,
     listarEnviadas,
     actualizar,
     marcarVista,

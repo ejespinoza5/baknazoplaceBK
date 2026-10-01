@@ -22,7 +22,29 @@ const postular = async (req, res, next) => {
 const listarRecibidas = async (req, res, next) => {
     try {
         res.set('Cache-Control', 'no-store');
-        res.json(await postulacionService.listarRecibidas({ usuarioId: req.usuario.id, query: req.query, base: baseUrl(req) }));
+        res.json(
+            await postulacionService.listarRecibidas({
+                usuarioId: req.usuario.id,
+                tipoCuenta: req.usuario.tipo_cuenta,
+                query: req.query,
+                base: baseUrl(req),
+            })
+        );
+    } catch (err) {
+        next(err);
+    }
+};
+
+const listarVacantes = async (req, res, next) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.json(
+            await postulacionService.listarVacantes({
+                usuarioId: req.usuario.id,
+                tipoCuenta: req.usuario.tipo_cuenta,
+                base: baseUrl(req),
+            })
+        );
     } catch (err) {
         next(err);
     }
@@ -43,6 +65,7 @@ const actualizar = async (req, res, next) => {
             await postulacionService.actualizar({
                 id: req.params.id,
                 usuarioId: req.usuario.id,
+                tipoCuenta: req.usuario.tipo_cuenta,
                 datos: req.body || {},
                 base: baseUrl(req),
             })
@@ -77,4 +100,4 @@ const descargarCv = async (req, res, next) => {
     }
 };
 
-module.exports = { postular, listarRecibidas, listarEnviadas, actualizar, retirar, descargarCv };
+module.exports = { postular, listarRecibidas, listarVacantes, listarEnviadas, actualizar, retirar, descargarCv };

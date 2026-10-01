@@ -56,6 +56,11 @@ const nombreSeguro = (original) => {
 
 const nombrePersona = (nombres, apellidos) => [nombres, apellidos].filter(Boolean).join(' ').trim();
 
+// Solo los negocios publican vacantes, así que solo ellos gestionan candidatos.
+const exigirNegocio = (tipoCuenta) => {
+    if (tipoCuenta !== 'NEGOCIO') throw error('Solo las cuentas de negocio gestionan vacantes', 403);
+};
+
 // Lo que ve el dueño de la vacante.
 const aRecibida = (f, base) => ({
     id: Number(f.id),
@@ -164,7 +169,8 @@ const postular = async ({ anuncioId, usuarioId, archivo, datos, frontendUrl }) =
     return { id: Number(id), estado: 'NUEVA' };
 };
 
-const listarRecibidas = async ({ usuarioId, query, base }) => {
+const listarRecibidas = async ({ usuarioId, tipoCuenta, query, base }) => {
+    exigirNegocio(tipoCuenta);
     const anuncioId = query.anuncio && /^\d+$/.test(query.anuncio) ? query.anuncio : null;
     const estado = query.estado || null;
     if (estado && !ESTADOS.includes(estado)) throw error("Parámetro 'estado' inválido", 400);
@@ -192,6 +198,39 @@ const listarRecibidas = async ({ usuarioId, query, base }) => {
     };
 };
 
+// El módulo de vacantes: cada una con su anuncio, el embudo de candidatos por
+// estado y las caras de los últimos que se postularon.
+const listarVacantes = async ({ usuarioId, tipoCuenta, base }) => {
+    exigirNegocio(tipoCuenta);
+    const filas = await postulacionModel.listarVacantes(usuarioId);
+    return {
+        items: filas.map((f) => ({
+            id: Number(f.id),
+            slug: f.slug,
+            titulo: f.titulo,
+            estado: f.estado,
+            vendido: f.vendido,
+            vendidoEn: f.vendido_en,
+            abierta: f.estado === 'PUBLICADO' && !f.vendido,
+            precio: f.precio,
+            moneda: f.moneda,
+            ubicacion: f.canton_nombre,
+            sector: f.sector,
+            categoria: f.categoria_nombre,
+            detalle: { jornada: f.jornada, modalidad: f.modalidad },
+            portada: f.portada_key ? urlPublica(base, `/uploads/${f.portada_key}`) : null,
+            vistas: f.vistas,
+            publicadoEn: f.publicado_en,
+            creadoEn: f.creado_en,
+            postulaciones: { total: f.total, porEstado: f.por_estado },
+            recientes: f.recientes.map((r) => ({
+                nombre: nombrePersona(r.nombres, r.apellidos),
+                foto: urlPublica(base, r.foto_perfil),
+            })),
+        })),
+    };
+};
+
 const listarEnviadas = async ({ usuarioId, query, base }) => {
     const limite = entero(query.limite, 30, 1, 100);
     const offset = entero(query.offset, 0, 0, 100000);
@@ -203,7 +242,8 @@ const listarEnviadas = async ({ usuarioId, query, base }) => {
 };
 
 // Solo el dueño de la vacante cambia el estado o la nota.
-const actualizar = async ({ id, usuarioId, datos, base }) => {
+const actualizar = async ({ id, usuarioId, tipoCuenta, datos, base }) => {
+    exigirNegocio(tipoCuenta);
     const fila = /^\d+$/.test(String(id)) ? await postulacionModel.buscarPorId(id) : null;
     if (!fila || fila.dueno_id !== usuarioId) throw error('Postulación no encontrada', 404);
 
@@ -260,4 +300,4 @@ const infoParaAnuncio = async (fila, usuarioId) => {
     return { miPostulacion: mia ? { id: Number(mia.id), estado: mia.estado, creadoEn: mia.creado_en } : null };
 };
 
-module.exports = { postular, listarRecibidas, listarEnviadas, actualizar, retirar, obtenerCv, infoParaAnuncio };
+module.exports = { postular, listarRecibidas, listarVacantes, listarEnviadas, actualizar, retirar, obtenerCv, infoParaAnuncio };

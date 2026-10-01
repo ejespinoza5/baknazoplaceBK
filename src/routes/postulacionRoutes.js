@@ -8,6 +8,8 @@ router.use(requiereAutenticacion);
 
 // Bandeja del empleador (?anuncio=&estado=&limite=&offset=) con su resumen.
 router.get('/recibidas', postulacionController.listarRecibidas);
+// Las vacantes del negocio con su anuncio y el embudo de candidatos.
+router.get('/vacantes', postulacionController.listarVacantes);
 // Las que envió quien busca trabajo.
 router.get('/enviadas', postulacionController.listarEnviadas);
 
