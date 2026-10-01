@@ -355,6 +355,10 @@ const crear = async ({ usuario, datos, archivos, idempotencyKey, base }) => {
     if (!PILARES.includes(pilar)) {
         throw errorValidacion({ pilar: 'Tipo de anuncio inválido' });
     }
+    // Las vacantes solo las publican negocios; las personas, productos y servicios.
+    if (pilar === 'empleo' && usuario.tipo_cuenta !== 'NEGOCIO') {
+        throw error('Solo las cuentas de negocio pueden publicar vacantes de empleo', 403);
+    }
 
     const campos = await validarCampos(datos, pilar, errores, false);
     const detalle = validarDetalle(pilar, datos.detalle, errores);
