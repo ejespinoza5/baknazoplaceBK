@@ -987,3 +987,65 @@ CREATE OR REPLACE FUNCTION f_unaccent(text) RETURNS text
 -- Título normalizado (minúsculas y sin tildes) indexado por trigramas.
 CREATE INDEX IF NOT EXISTS idx_anuncios_titulo_trgm
     ON anuncios USING gin (f_unaccent(lower(titulo)) gin_trgm_ops);
+
+
+-- ============================================================
+-- Chat: conversaciones privadas entre dos personas
+-- Una conversación une a quien escribe primero (iniciador) con quien
+-- publicó (destinatario) y, si nació desde un anuncio de productos o
+-- servicios, a ese anuncio. Hay una sola por par de personas y anuncio:
+-- el índice único usa LEAST/GREATEST para que A→B y B→A sean la misma.
+-- Los mensajes son texto plano; el frontend nunca los pinta como HTML.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS conversaciones (
+    id                 BIGSERIAL PRIMARY KEY,
+    iniciador_id       UUID   NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    destinatario_id    UUID   NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    -- Los anuncios se borran en suave; si alguno se borrara de verdad, su chat
+    -- se va con él para no chocar con la conversación directa del mismo par.
+    anuncio_id         BIGINT REFERENCES anuncios(id) ON DELETE CASCADE,
+    -- Copia del último mensaje para listar sin recorrer 'mensajes'.
+    ultimo_mensaje_id  BIGINT,
+    ultimo_mensaje_en  TIMESTAMPTZ,
+    creado_en          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    actualizado_en     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT conversacion_entre_dos CHECK (iniciador_id <> destinatario_id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_conversaciones_par_anuncio ON conversaciones (
+    LEAST(iniciador_id, destinatario_id),
+    GREATEST(iniciador_id, destinatario_id),
+    COALESCE(anuncio_id, 0)
+);
+-- La bandeja de cada participante, de la más reciente a la más antigua.
+CREATE INDEX IF NOT EXISTS idx_conversaciones_iniciador ON conversaciones (iniciador_id, ultimo_mensaje_en DESC);
+CREATE INDEX IF NOT EXISTS idx_conversaciones_destinatario ON conversaciones (destinatario_id, ultimo_mensaje_en DESC);
+
+DROP TRIGGER IF EXISTS trg_conversaciones_actualizado ON conversaciones;
+CREATE TRIGGER trg_conversaciones_actualizado
+    BEFORE UPDATE ON conversaciones
+    FOR EACH ROW
+    EXECUTE FUNCTION set_actualizado_en();
+
+CREATE TABLE IF NOT EXISTS mensajes (
+    id               BIGSERIAL PRIMARY KEY,
+    conversacion_id  BIGINT        NOT NULL REFERENCES conversaciones(id) ON DELETE CASCADE,
+    remitente_id     UUID          NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    contenido        VARCHAR(2000) NOT NULL CHECK (char_length(btrim(contenido)) > 0),
+    -- Lo genera el navegador al enviar: si el envío se reintenta tras una
+    -- reconexión, el UNIQUE evita guardar el mismo mensaje dos veces.
+    cliente_id       VARCHAR(64)   NOT NULL,
+    creado_en        TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    -- Llegó a algún dispositivo del destinatario / lo abrió en la conversación.
+    entregado_en     TIMESTAMPTZ,
+    leido_en         TIMESTAMPTZ,
+    CONSTRAINT leido_implica_entregado CHECK (leido_en IS NULL OR entregado_en IS NOT NULL),
+    UNIQUE (remitente_id, cliente_id)
+);
+
+-- El historial se pagina hacia atrás por id.
+CREATE INDEX IF NOT EXISTS idx_mensajes_conversacion ON mensajes (conversacion_id, id DESC);
+-- Contador de no leídos: solo recorre lo que falta leer.
+CREATE INDEX IF NOT EXISTS idx_mensajes_sin_leer ON mensajes (conversacion_id, remitente_id) WHERE leido_en IS NULL;
+-- Acuses de entrega al conectarse: solo lo que todavía no llegó.
+CREATE INDEX IF NOT EXISTS idx_mensajes_sin_entregar ON mensajes (conversacion_id) WHERE entregado_en IS NULL;

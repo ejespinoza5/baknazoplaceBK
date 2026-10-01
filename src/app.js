@@ -12,6 +12,8 @@ const catalogoRoutes = require('./routes/catalogoRoutes');
 const anuncioRoutes = require('./routes/anuncioRoutes');
 const perfilRoutes = require('./routes/perfilRoutes');
 const postulacionRoutes = require('./routes/postulacionRoutes');
+const chatRoutes = require('./routes/chatRoutes');
+const { adjuntarChat } = require('./realtime/chatSocket');
 const app = express();
 
 // En producción la API está detrás de un proxy inverso (Nginx) que envía X-Forwarded-For.
@@ -53,6 +55,9 @@ app.use('/api/perfil', perfilRoutes);
 // Postulaciones a empleo (bandeja del empleador, las enviadas y la descarga del CV)
 app.use('/api/postulaciones', postulacionRoutes);
 
+// Chat: bandeja e historial por REST; los mensajes en vivo van por /ws/chat.
+app.use('/api/chat', chatRoutes);
+
 // Manejador de errores centralizado (nunca exponer detalles internos/stack al cliente)
 app.use((err, req, res, next) => {
     if (err.name === 'MulterError') {
@@ -82,6 +87,11 @@ app.get('/', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const servidor = app.listen(PORT, () => {
     console.log(`Servidor en http://localhost:${PORT}`);
 });
+
+// El chat en vivo comparte puerto con la API: el WebSocket entra por el
+// 'upgrade' del mismo servidor HTTP (detrás de Nginx necesita las cabeceras
+// Upgrade/Connection en la ruta /ws/).
+adjuntarChat(servidor);

@@ -59,6 +59,19 @@ module.exports = {
     }),
     // Vistas desde la lista: por IP; una sesión normal hace unas pocas por minuto.
     limitadorVistas: crearLimitador(15, 300, 'Demasiadas solicitudes. Intenta más tarde.'),
+    // Abrir conversaciones nuevas: por usuario. Frena a quien quiera escribirle a
+    // todos los anunciantes; los mensajes en sí los limita el WebSocket.
+    limitadorChat: rateLimit({
+        windowMs: 15 * 60 * 1000,
+        max: 60,
+        standardHeaders: true,
+        legacyHeaders: false,
+        keyGenerator: (req) => `usuario:${req.usuario.id}`,
+        message: {
+            error: 'Estás abriendo demasiadas conversaciones. Espera un momento.',
+            message: 'Estás abriendo demasiadas conversaciones. Espera un momento.',
+        },
+    }),
     // Postularse sube un PDF: por usuario, y bastante más bajo que un like.
     limitadorPostulacion: rateLimit({
         windowMs: 60 * 60 * 1000,
