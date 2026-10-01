@@ -9,6 +9,7 @@ const postular = async (req, res, next) => {
         const resultado = await postulacionService.postular({
             anuncioId: req.params.id,
             usuarioId: req.usuario.id,
+            tipoCuenta: req.usuario.tipo_cuenta,
             archivo: req.file || null,
             datos: req.body || {},
             frontendUrl: env.frontendUrl,

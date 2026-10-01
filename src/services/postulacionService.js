@@ -104,7 +104,9 @@ const aEnviada = (f, base) => ({
 
 // ---------- Casos de uso ----------
 
-const postular = async ({ anuncioId, usuarioId, archivo, datos, frontendUrl }) => {
+const postular = async ({ anuncioId, usuarioId, tipoCuenta, archivo, datos, frontendUrl }) => {
+    // Los negocios publican vacantes; postularse es cosa de personas.
+    if (tipoCuenta !== 'PERSONA') throw error('Solo las cuentas personales pueden postularse a vacantes', 403);
     if (!/^\d+$/.test(String(anuncioId))) throw error('Anuncio no encontrado', 404);
     const anuncio = await anuncioModel.buscarPorId(anuncioId);
     if (!anuncio || anuncio.eliminado_en) throw error('Anuncio no encontrado', 404);
