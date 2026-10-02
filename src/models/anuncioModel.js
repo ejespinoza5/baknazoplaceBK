@@ -339,12 +339,14 @@ const listarPorAutor = async ({ usuarioId, estado, cursor, limite }) => {
 // ---------- Me gusta ----------
 
 // Idempotente: si el like ya existía no pasa nada, y el total no se duplica.
+// true si el like es nuevo (para avisar solo una vez).
 const darLike = async (anuncioId, usuarioId) => {
-    await pool.query(
+    const { rowCount } = await pool.query(
         `INSERT INTO anuncio_likes (anuncio_id, usuario_id) VALUES ($1, $2)
          ON CONFLICT DO NOTHING`,
         [anuncioId, usuarioId]
     );
+    return rowCount > 0;
 };
 
 const quitarLike = async (anuncioId, usuarioId) => {
@@ -377,11 +379,13 @@ const idsConLike = async (usuarioId, anuncioIds) => {
 // ---------- Guardados ----------
 
 // Idempotentes, igual que el like: guardar dos veces no duplica nada.
+// true si se guardó ahora (para avisar solo una vez).
 const guardar = async (anuncioId, usuarioId) => {
-    await pool.query(
+    const { rowCount } = await pool.query(
         `INSERT INTO anuncio_guardados (anuncio_id, usuario_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
         [anuncioId, usuarioId]
     );
+    return rowCount > 0;
 };
 
 const quitarGuardado = async (anuncioId, usuarioId) => {

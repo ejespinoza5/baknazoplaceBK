@@ -5,6 +5,8 @@ const anuncioModel = require('../models/anuncioModel');
 const catalogoModel = require('../models/catalogoModel');
 const negocioModel = require('../models/negocioModel');
 const postulacionService = require('./postulacionService');
+const notificacionService = require('./notificacionService');
+const notificacionModel = require('../models/notificacionModel');
 const { procesarFotoAnuncio, rutaAbsolutaDeStorageKey } = require('./imageService');
 const { validarLatitud, validarLongitud } = require('../utils/validaciones');
 const { resolverContacto, telefonoLegible, enlaceWhatsapp } = require('../utils/telefono');
@@ -406,6 +408,22 @@ const crear = async ({ usuario, datos, archivos, idempotencyKey, base }) => {
         client.release();
     }
 
+    // Una vacante nueva se avisa a quienes siguen al negocio. Va por detrás:
+    // la respuesta de publicar no espera a repartirla.
+    if (pilar === 'empleo') {
+        notificacionModel
+            .seguidoresPersonas(usuario.id)
+            .then((seguidores) =>
+                notificacionService.notificarVarios(seguidores, {
+                    tipo: 'NUEVA_VACANTE',
+                    actorId: usuario.id,
+                    anuncioId,
+                    claveUnica: `vacante:${anuncioId}`,
+                })
+            )
+            .catch((e) => console.error('[notificaciones] vacante nueva:', e.message));
+    }
+
     return { repetido: false, ...respuestaCreacion(await cargarCompleto(anuncioId, base, true)) };
 };
 
@@ -761,7 +779,16 @@ const darLike = async ({ id, usuarioId }) => {
     if (fila.autor_usuario_id === usuarioId) throw error('No puedes dar me gusta a tu propio anuncio', 403);
     if (fila.vendido) throw error('Este anuncio ya se vendió', 403);
 
-    await anuncioModel.darLike(fila.id, usuarioId);
+    if (await anuncioModel.darLike(fila.id, usuarioId)) {
+        // Un aviso por anuncio que va sumando personas hasta que el dueño lo lea.
+        notificacionService.notificar({
+            usuarioId: fila.autor_usuario_id,
+            tipo: 'ME_GUSTA',
+            actorId: usuarioId,
+            anuncioId: fila.id,
+            claveGrupo: `me_gusta:${fila.id}`,
+        });
+    }
     return anuncioModel.estadoLike(fila.id, usuarioId);
 };
 
@@ -783,7 +810,16 @@ const guardar = async ({ id, usuarioId }) => {
     if (!/^\d+$/.test(String(id))) throw error('Anuncio no encontrado', 404);
     const fila = await anuncioModel.buscarPorId(id);
     if (!fila || !estaVisible(fila)) throw error('Anuncio no encontrado', 404);
-    await anuncioModel.guardar(fila.id, usuarioId);
+    if ((await anuncioModel.guardar(fila.id, usuarioId)) && fila.autor_usuario_id !== usuarioId) {
+        // El dueño se entera de cuántos lo guardaron, nunca de quiénes.
+        notificacionService.notificar({
+            usuarioId: fila.autor_usuario_id,
+            tipo: 'GUARDADO',
+            actorId: usuarioId,
+            anuncioId: fila.id,
+            claveGrupo: `guardado:${fila.id}`,
+        });
+    }
     return { guardado: true };
 };
 

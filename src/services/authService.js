@@ -14,6 +14,7 @@ const aceptacionPoliticaModel = require('../models/aceptacionPoliticaModel');
 const tokenService = require('./tokenService');
 const emailService = require('./emailService');
 const googleAuthService = require('./googleAuthService');
+const notificacionService = require('./notificacionService');
 const { procesarFotoPerfil, procesarLogo, rutaAbsolutaDe } = require('./imageService');
 const { generarCodigoNumerico, hashCodigo, hashToken } = require('../utils/codigos');
 const { normalizarTelefono } = require('../utils/telefono');
@@ -715,6 +716,8 @@ const restablecerContrasena = async ({ correo, codigo, nueva_contrasena }) => {
     await cuentaAuthModel.actualizarContrasena(usuario.id, hash);
     await codigoRecuperacionModel.marcarUtilizado(registro.id);
     await refreshTokenModel.revocarTodosDelUsuario(usuario.id);
+    // Alerta de seguridad: si no fue la persona, lo verá en todos sus dispositivos.
+    notificacionService.notificar({ usuarioId: usuario.id, tipo: 'SEGURIDAD', datos: { evento: 'CONTRASENA_RESTABLECIDA' } });
 
     return { mensaje: 'Contraseña actualizada. Vuelve a iniciar sesión.' };
 };
@@ -1068,6 +1071,7 @@ const cambiarContrasena = async ({ usuarioId, contrasena_actual, nueva_contrasen
     // Se cierran todas las sesiones y se emite un par nuevo para este dispositivo.
     await refreshTokenModel.revocarTodosDelUsuario(usuario.id);
     const tokens = await tokenService.emitirParTokens(usuario);
+    notificacionService.notificar({ usuarioId: usuario.id, tipo: 'SEGURIDAD', datos: { evento: 'CONTRASENA_CAMBIADA' } });
     return { mensaje: 'Contraseña actualizada. Se cerraron las sesiones en otros dispositivos.', ...tokens };
 };
 

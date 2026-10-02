@@ -1117,3 +1117,105 @@ CREATE TABLE IF NOT EXISTS bloqueos (
 CREATE INDEX IF NOT EXISTS idx_bloqueos_bloqueado ON bloqueos (bloqueado_id);
 
 
+-- ============================================================
+-- Notificaciones: historial de la campana, push (FCM) y preferencias
+-- El backend las genera; se reparten en vivo por el WebSocket del chat y,
+-- si la persona no tiene la app abierta, por push a sus dispositivos.
+--  · clave_grupo: las repetitivas (likes, seguidores, mensajes) se juntan en
+--    UNA notificación sin leer que va sumando personas ("Ana y 3 más…").
+--    actores evita contar dos veces a la misma persona.
+--  · clave_unica: las que solo deben existir una vez (p. ej. un vencimiento).
+--  · despachada_en NULL: la insertó la propia base (trigger de moderación) y
+--    la tarea del backend todavía no la repartió.
+-- El texto no se guarda: se arma al leer, con los nombres y títulos al día.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS notificaciones (
+    id               BIGSERIAL PRIMARY KEY,
+    usuario_id       UUID        NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    tipo             VARCHAR(30) NOT NULL CHECK (tipo IN (
+                         'SEGUIDOR', 'ME_GUSTA', 'COMENTARIO', 'RESPUESTA', 'GUARDADO', 'MENSAJE',
+                         'ANUNCIO_APROBADO', 'ANUNCIO_RECHAZADO', 'ANUNCIO_VENCIDO',
+                         'NUEVA_VACANTE', 'POSTULACION_NUEVA', 'POSTULACION_ESTADO', 'CV_REVISADO',
+                         'SEGURIDAD')),
+    -- La última persona que hizo algo, y todas las del grupo (sin repetir).
+    actor_id         UUID        REFERENCES usuarios(id) ON DELETE SET NULL,
+    actores          UUID[]      NOT NULL DEFAULT '{}',
+    cantidad         INTEGER     NOT NULL DEFAULT 1 CHECK (cantidad > 0),
+    anuncio_id       BIGINT      REFERENCES anuncios(id) ON DELETE CASCADE,
+    conversacion_id  BIGINT      REFERENCES conversaciones(id) ON DELETE CASCADE,
+    postulacion_id   BIGINT      REFERENCES postulaciones(id) ON DELETE CASCADE,
+    -- Detalles que no son relaciones (el nuevo estado, el evento de seguridad…).
+    datos            JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    clave_grupo      VARCHAR(120),
+    clave_unica      VARCHAR(160),
+    creada_en        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    actualizada_en   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    leida_en         TIMESTAMPTZ,
+    despachada_en    TIMESTAMPTZ,
+    push_enviado_en  TIMESTAMPTZ
+);
+
+-- Una sola notificación abierta (sin leer) por grupo: al leerla, la siguiente
+-- empieza un grupo nuevo.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_notificaciones_grupo_abierto
+    ON notificaciones (usuario_id, clave_grupo)
+    WHERE leida_en IS NULL AND clave_grupo IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_notificaciones_clave
+    ON notificaciones (usuario_id, clave_unica)
+    WHERE clave_unica IS NOT NULL;
+-- El historial de la campana, de la más reciente a la más antigua.
+CREATE INDEX IF NOT EXISTS idx_notificaciones_usuario ON notificaciones (usuario_id, actualizada_en DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_notificaciones_no_leidas ON notificaciones (usuario_id) WHERE leida_en IS NULL;
+-- Las que insertó la base y faltan por repartir.
+CREATE INDEX IF NOT EXISTS idx_notificaciones_pendientes ON notificaciones (id) WHERE despachada_en IS NULL;
+
+-- Dispositivos con push activado (un token FCM por navegador). El token es
+-- del navegador: si otra cuenta entra en él y activa el push, pasa a ella.
+CREATE TABLE IF NOT EXISTS dispositivos_push (
+    id              BIGSERIAL PRIMARY KEY,
+    usuario_id      UUID         NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    token           TEXT         NOT NULL UNIQUE CHECK (char_length(token) BETWEEN 20 AND 4096),
+    plataforma      VARCHAR(20)  NOT NULL DEFAULT 'web' CHECK (plataforma IN ('web')),
+    navegador       VARCHAR(160),
+    creado_en       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    actualizado_en  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_dispositivos_push_usuario ON dispositivos_push (usuario_id);
+
+-- Preferencias. categorias = {"seguidores": {"app": true, "push": false}, …};
+-- una categoría o canal ausente cuenta como activado. El sonido es el de los
+-- avisos dentro de la app; con 'ninguno' el push también llega en silencio.
+CREATE TABLE IF NOT EXISTS notificacion_preferencias (
+    usuario_id      UUID        PRIMARY KEY REFERENCES usuarios(id) ON DELETE CASCADE,
+    categorias      JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    sonido          VARCHAR(20) NOT NULL DEFAULT 'campana'
+        CHECK (sonido IN ('ninguno', 'campana', 'burbuja', 'pop', 'marimba')),
+    actualizado_en  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Moderación: no hay un panel en la API, así que el aviso lo genera la base
+-- al cambiar el estado de un anuncio, venga de donde venga el cambio. El
+-- dueño no puede rechazar su propio anuncio ni sacarlo de RECHAZADO por la
+-- API, así que estas transiciones solo las hace quien modera.
+CREATE OR REPLACE FUNCTION notificar_moderacion_anuncio()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.estado = 'RECHAZADO' THEN
+        INSERT INTO notificaciones (usuario_id, tipo, anuncio_id)
+        VALUES (NEW.autor_usuario_id, 'ANUNCIO_RECHAZADO', NEW.id);
+    ELSIF OLD.estado = 'RECHAZADO' AND NEW.estado = 'PUBLICADO' THEN
+        INSERT INTO notificaciones (usuario_id, tipo, anuncio_id)
+        VALUES (NEW.autor_usuario_id, 'ANUNCIO_APROBADO', NEW.id);
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_anuncios_moderacion ON anuncios;
+CREATE TRIGGER trg_anuncios_moderacion
+    AFTER UPDATE OF estado ON anuncios
+    FOR EACH ROW
+    WHEN (OLD.estado IS DISTINCT FROM NEW.estado)
+    EXECUTE FUNCTION notificar_moderacion_anuncio();
+
+

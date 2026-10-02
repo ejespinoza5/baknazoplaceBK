@@ -6,6 +6,7 @@ const anuncioModel = require('../models/anuncioModel');
 const usuarioModel = require('../models/usuarioModel');
 const postulacionModel = require('../models/postulacionModel');
 const emailService = require('./emailService');
+const notificacionService = require('./notificacionService');
 const { normalizarTelefono } = require('../utils/telefono');
 
 const ESTADOS = ['NUEVA', 'VISTA', 'PRESELECCIONADA', 'DESCARTADA', 'CONTRATADA'];
@@ -102,6 +103,17 @@ const aEnviada = (f, base) => ({
     },
 });
 
+// Abrir el CV es "revisado"; lo demás, un cambio de estado de la postulación.
+const avisarPostulante = (fila, estado) =>
+    notificacionService.notificar({
+        usuarioId: fila.postulante_id,
+        tipo: estado === 'VISTA' ? 'CV_REVISADO' : 'POSTULACION_ESTADO',
+        actorId: fila.dueno_id,
+        anuncioId: fila.anuncio_id,
+        postulacionId: fila.id,
+        datos: { estado },
+    });
+
 // ---------- Casos de uso ----------
 
 const postular = async ({ anuncioId, usuarioId, tipoCuenta, archivo, datos, frontendUrl }) => {
@@ -167,6 +179,16 @@ const postular = async ({ anuncioId, usuarioId, tipoCuenta, archivo, datos, fron
             });
         })
         .catch((e) => console.error('[postulaciones] no se pudo avisar por correo:', e.message));
+
+    // Y en la campana: un aviso por vacante que va sumando candidatos.
+    notificacionService.notificar({
+        usuarioId: anuncio.autor_usuario_id,
+        tipo: 'POSTULACION_NUEVA',
+        actorId: usuarioId,
+        anuncioId: anuncio.id,
+        postulacionId: id,
+        claveGrupo: `postulaciones:${anuncio.id}`,
+    });
 
     return { id: Number(id), estado: 'NUEVA' };
 };
@@ -263,6 +285,8 @@ const actualizar = async ({ id, usuarioId, tipoCuenta, datos, base }) => {
     if (Object.keys(cambios).length === 0) throw error('No se enviaron cambios', 400);
 
     await postulacionModel.actualizar(fila.id, cambios);
+    // Quien se postuló se entera de cada cambio de estado (nunca de la nota).
+    if (cambios.estado && cambios.estado !== fila.estado) avisarPostulante(fila, cambios.estado);
     return aRecibida(await postulacionModel.buscarPorId(fila.id), base);
 };
 
@@ -287,7 +311,15 @@ const obtenerCv = async ({ id, usuarioId }) => {
     } catch {
         throw error('El archivo ya no está disponible', 410);
     }
-    if (esDueno) postulacionModel.marcarVista(fila.id).catch(() => {});
+    // La primera vez que el negocio abre el CV, quien se postuló lo sabe.
+    if (esDueno) {
+        postulacionModel
+            .marcarVista(fila.id)
+            .then((cambio) => {
+                if (cambio) avisarPostulante(fila, 'VISTA');
+            })
+            .catch(() => {});
+    }
     return { ruta, nombre: fila.cv_nombre };
 };
 

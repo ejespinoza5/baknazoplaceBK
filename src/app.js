@@ -13,7 +13,9 @@ const anuncioRoutes = require('./routes/anuncioRoutes');
 const perfilRoutes = require('./routes/perfilRoutes');
 const postulacionRoutes = require('./routes/postulacionRoutes');
 const chatRoutes = require('./routes/chatRoutes');
+const notificacionRoutes = require('./routes/notificacionRoutes');
 const { adjuntarChat } = require('./realtime/chatSocket');
+const notificacionService = require('./services/notificacionService');
 const app = express();
 
 // En producción la API está detrás de un proxy inverso (Nginx) que envía X-Forwarded-For.
@@ -58,6 +60,9 @@ app.use('/api/postulaciones', postulacionRoutes);
 // Chat: bandeja e historial por REST; los mensajes en vivo van por /ws/chat.
 app.use('/api/chat', chatRoutes);
 
+// Notificaciones: historial de la campana, preferencias y dispositivos push.
+app.use('/api/notificaciones', notificacionRoutes);
+
 // Manejador de errores centralizado (nunca exponer detalles internos/stack al cliente)
 app.use((err, req, res, next) => {
     if (err.name === 'MulterError') {
@@ -95,3 +100,6 @@ const servidor = app.listen(PORT, () => {
 // 'upgrade' del mismo servidor HTTP (detrás de Nginx necesita las cabeceras
 // Upgrade/Connection en la ruta /ws/).
 adjuntarChat(servidor);
+
+// Reparte lo que insertó la base (moderación) y avisa de anuncios vencidos.
+notificacionService.iniciarTareas();

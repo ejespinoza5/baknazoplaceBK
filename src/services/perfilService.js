@@ -1,4 +1,5 @@
 const perfilModel = require('../models/perfilModel');
+const notificacionService = require('./notificacionService');
 const { privacidadDe } = require('../utils/privacidad');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -178,7 +179,15 @@ const seguir = async ({ seguidorId, seguidoId }) => {
     validarId(seguidoId);
     if (seguidorId === seguidoId) throw error('No puedes seguirte a ti mismo', 400);
     if (!(await perfilModel.existeActivo(seguidoId))) throw error('Usuario no encontrado', 404);
-    await perfilModel.seguir(seguidorId, seguidoId);
+    if (await perfilModel.seguir(seguidorId, seguidoId)) {
+        // Los seguidores nuevos se juntan en un solo aviso hasta que se lea.
+        notificacionService.notificar({
+            usuarioId: seguidoId,
+            tipo: 'SEGUIDOR',
+            actorId: seguidorId,
+            claveGrupo: 'seguidores',
+        });
+    }
     return { seguidores: await perfilModel.contarRelacion(seguidoId, 'seguidores') };
 };
 

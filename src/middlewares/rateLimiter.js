@@ -72,6 +72,19 @@ module.exports = {
             message: 'Estás abriendo demasiadas conversaciones. Espera un momento.',
         },
     }),
+    // Registrar y quitar tokens de push: por usuario. Un navegador lo hace una
+    // vez al activar y al renovarse el token; esto solo frena abusos.
+    limitadorDispositivos: rateLimit({
+        windowMs: 15 * 60 * 1000,
+        max: 30,
+        standardHeaders: true,
+        legacyHeaders: false,
+        keyGenerator: (req) => `usuario:${req.usuario.id}`,
+        message: {
+            error: 'Demasiados cambios en las notificaciones push. Espera un momento.',
+            message: 'Demasiados cambios en las notificaciones push. Espera un momento.',
+        },
+    }),
     // Postularse sube un PDF: por usuario, y bastante más bajo que un like.
     limitadorPostulacion: rateLimit({
         windowMs: 60 * 60 * 1000,

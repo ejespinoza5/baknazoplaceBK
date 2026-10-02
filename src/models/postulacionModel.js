@@ -133,8 +133,10 @@ const actualizar = async (id, { estado, notaInterna }) => {
 
 // Al abrir el CV por primera vez, "Nueva" pasa a "Vista". Solo desde NUEVA:
 // no pisa una decisión que el dueño ya tomó.
+// true si de verdad pasó de NUEVA a VISTA (la primera vez que se abre).
 const marcarVista = async (id) => {
-    await pool.query(`UPDATE postulaciones SET estado = 'VISTA' WHERE id = $1 AND estado = 'NUEVA'`, [id]);
+    const { rowCount } = await pool.query(`UPDATE postulaciones SET estado = 'VISTA' WHERE id = $1 AND estado = 'NUEVA'`, [id]);
+    return rowCount > 0;
 };
 
 const eliminar = async (id) => {

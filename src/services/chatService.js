@@ -1,6 +1,7 @@
 const anuncioModel = require('../models/anuncioModel');
 const chatModel = require('../models/chatModel');
 const hub = require('../realtime/hub');
+const notificacionService = require('./notificacionService');
 
 const CONTENIDO_MAX = 2000;
 const LIMITE_MENSAJES = 40;
@@ -293,6 +294,16 @@ const enviar = async ({ usuarioId, conversacionId, contenido, clienteId, base, s
     // Las demás pestañas de quien escribió también lo pintan.
     hub.emitir(usuarioId, { t: 'mensaje', mensaje: aMensaje(mensaje, usuarioId), anuncio }, socketOrigen);
 
+    // En la campana, un aviso por conversación que cuenta los mensajes; si el
+    // destinatario no tiene la app abierta, le llega como push.
+    notificacionService.notificar({
+        usuarioId: c.otroId,
+        tipo: 'MENSAJE',
+        actorId: usuarioId,
+        conversacionId: c.id,
+        claveGrupo: `mensajes:${c.id}`,
+    });
+
     return aMensaje(mensaje, usuarioId);
 };
 
@@ -303,6 +314,8 @@ const marcarLeida = async ({ usuarioId, id }) => {
     const noLeidos = await chatModel.contarNoLeidos(usuarioId);
     // Las otras pestañas del lector bajan su contador sin preguntar.
     hub.emitir(usuarioId, { t: 'conversacion_leida', conversacionId: Number(c.id), noLeidos });
+    // Leída la conversación, su aviso en la campana también.
+    notificacionService.marcarLeidasDeConversacion(usuarioId, c.id).catch(() => undefined);
     return { leidos: leidos.length, noLeidos };
 };
 

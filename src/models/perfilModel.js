@@ -58,11 +58,13 @@ const existeActivo = async (usuarioId) => {
     return rows.length > 0;
 };
 
+// true si es un seguimiento nuevo (para avisar solo una vez).
 const seguir = async (seguidorId, seguidoId) => {
-    await pool.query(
+    const { rowCount } = await pool.query(
         `INSERT INTO seguidores (seguidor_id, seguido_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
         [seguidorId, seguidoId]
     );
+    return rowCount > 0;
 };
 
 const dejarDeSeguir = async (seguidorId, seguidoId) => {

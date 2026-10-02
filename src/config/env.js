@@ -41,12 +41,23 @@ const env = {
     // Archivos privados (hojas de vida). NUNCA se sirve como estático: solo se
     // leen desde la API tras comprobar quién los pide.
     privadoDir: process.env.PRIVATE_DIR || path.join(__dirname, '..', '..', 'privado'),
+    // Cuenta de servicio de Firebase para enviar push (FCM HTTP v1). Es privada:
+    // vive solo aquí, nunca en el frontend. La clave llega con "\n" escapados
+    // desde el .env y se convierten en saltos de línea reales.
+    firebase: {
+        projectId: process.env.FIREBASE_PROJECT_ID || null,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL || null,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') : null,
+    },
     logoUrl: process.env.LOGO_URL || 'https://apibaknazo.duckdns.org/public/logo.png',
     frontendUrl: process.env.FRONTEND_URL || 'https://app.baknazo.com',
 };
 
 if (!env.google.clientId) {
     console.warn('[config] GOOGLE_CLIENT_ID no configurado: /login/google fallará hasta configurarlo.');
+}
+if (!env.firebase.projectId || !env.firebase.clientEmail || !env.firebase.privateKey) {
+    console.warn('[config] Firebase no configurado: las notificaciones funcionan dentro de la app, pero sin push.');
 }
 if (!env.smtp.host) {
     console.warn('[config] SMTP no configurado: los códigos de verificación/recuperación se mostrarán solo en consola.');
