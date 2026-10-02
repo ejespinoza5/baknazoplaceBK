@@ -6,7 +6,6 @@ const catalogoModel = require('../models/catalogoModel');
 const negocioModel = require('../models/negocioModel');
 const postulacionService = require('./postulacionService');
 const notificacionService = require('./notificacionService');
-const notificacionModel = require('../models/notificacionModel');
 const usuarioModel = require('../models/usuarioModel');
 const moderacionModel = require('../models/moderacionModel');
 const moderacionService = require('./moderacionService');
@@ -469,17 +468,7 @@ const crear = async ({ usuario, datos, archivos, idempotencyKey, base }) => {
     // Una vacante nueva se avisa a quienes siguen al negocio. Va por detrás:
     // la respuesta de publicar no espera a repartirla. Si espera revisión, no.
     if (pilar === 'empleo' && estadoInicial === 'PUBLICADO') {
-        notificacionModel
-            .seguidoresPersonas(usuario.id)
-            .then((seguidores) =>
-                notificacionService.notificarVarios(seguidores, {
-                    tipo: 'NUEVA_VACANTE',
-                    actorId: usuario.id,
-                    anuncioId,
-                    claveUnica: `vacante:${anuncioId}`,
-                })
-            )
-            .catch((e) => console.error('[notificaciones] vacante nueva:', e.message));
+        notificacionService.avisarVacanteNueva({ negocioUsuarioId: usuario.id, anuncioId });
     }
 
     return { repetido: false, ...respuestaCreacion(await cargarCompleto(anuncioId, base, true)) };

@@ -132,7 +132,10 @@ const componer = (f) => {
         case 'ANUNCIO_VENCIDO':
             return { texto: `${titulo} venció y ya no aparece en el feed`, url: '/mis-anuncios' };
         case 'NUEVA_VACANTE':
-            return { texto: `${nombreActor(f)} publicó una vacante: ${titulo}`, url: anuncio };
+            // Varias del mismo negocio en un solo aviso: lleva a su perfil, donde están todas.
+            return f.cantidad > 1
+                ? { texto: `${nombreActor(f)} publicó ${f.cantidad} vacantes nuevas`, url: f.actor_id ? `/perfil/${f.actor_id}` : anuncio }
+                : { texto: `${nombreActor(f)} publicó una vacante: ${titulo}`, url: anuncio };
         case 'POSTULACION_NUEVA':
             return {
                 texto: `${quien} ${plural ? 'se postularon' : 'se postuló'} a ${titulo}`,
@@ -268,6 +271,26 @@ const notificarVarios = async (usuarioIds, n) => {
     for (const usuarioId of usuarioIds) await notificar({ ...n, usuarioId });
 };
 
+/**
+ * Una vacante recién publicada. Solo la reciben las personas que SIGUEN a ese
+ * negocio (nunca todo el mundo: con muchas ofertas al día sería ruido), y las
+ * de un mismo negocio se juntan en un solo aviso sin leer ("publicó 3 vacantes").
+ * Va por detrás: quien publica no espera a que se reparta.
+ */
+const avisarVacanteNueva = ({ negocioUsuarioId, anuncioId }) => {
+    notificacionModel
+        .seguidoresPersonas(negocioUsuarioId)
+        .then((seguidores) =>
+            notificarVarios(seguidores, {
+                tipo: 'NUEVA_VACANTE',
+                actorId: negocioUsuarioId,
+                anuncioId,
+                claveGrupo: `vacantes:${negocioUsuarioId}`,
+            })
+        )
+        .catch((e) => console.error('[notificaciones] vacante nueva:', e.message));
+};
+
 // ---------- Casos de uso (API) ----------
 
 const listar = async ({ usuarioId, query, base }) => {
@@ -395,6 +418,7 @@ module.exports = {
     SONIDOS,
     notificar,
     notificarVarios,
+    avisarVacanteNueva,
     listar,
     contarNoLeidas,
     marcarLeidas,

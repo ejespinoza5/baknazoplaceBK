@@ -45,11 +45,14 @@ const registrar = async (n) => {
                        ELSE notificaciones.actores || EXCLUDED.actor_id
                    END,
                    cantidad = notificaciones.cantidad + 1,
+                   -- El aviso apunta a lo último (la vacante más reciente del grupo).
+                   anuncio_id = COALESCE(EXCLUDED.anuncio_id, notificaciones.anuncio_id),
                    datos = notificaciones.datos || EXCLUDED.datos,
                    actualizada_en = NOW(),
                    despachada_en = NOW()
                -- La misma persona dos veces (like, quitar, like) no suma ni avisa otra vez.
-               WHERE notificaciones.tipo = 'MENSAJE'
+               -- Los mensajes y las vacantes de un negocio sí suman: son cosas distintas.
+               WHERE notificaciones.tipo IN ('MENSAJE', 'NUEVA_VACANTE')
                   OR EXCLUDED.actor_id IS NULL
                   OR NOT (EXCLUDED.actor_id = ANY(notificaciones.actores))
                RETURNING id`;

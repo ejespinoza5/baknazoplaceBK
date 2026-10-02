@@ -5,6 +5,7 @@ const moderacionModel = require('../models/moderacionModel');
 const soporteModel = require('../models/soporteModel');
 const catalogoModel = require('../models/catalogoModel');
 const moderacionService = require('./moderacionService');
+const notificacionService = require('./notificacionService');
 const adminAuthService = require('./adminAuthService');
 const { generarContrasenaTemporal } = require('../utils/contrasenas');
 const { validarCorreo, normalizarCorreo } = require('../utils/validaciones');
@@ -214,6 +215,11 @@ const moderar = async ({ actor, id, accion, motivo, nota, ip }) => {
     const hecho = await moderacionModel.moderarAnuncio(Number(id), cambio, { ...evento, adminId: actor.id });
     if (!hecho) throw error('Anuncio no encontrado', 404);
     const cerradas = await moderacionModel.resolverDenuncias(id, denuncias, actor.id);
+    // Una vacante que esperaba revisión y se publica por primera vez: ahora sí
+    // se avisa a quienes siguen al negocio (al publicarla no se hizo).
+    if (accion === 'aprobar' && actual.pilar === 'empleo' && actual.estado === 'PENDIENTE_REVISION' && !actual.publicado_en) {
+        notificacionService.avisarVacanteNueva({ negocioUsuarioId: actual.autor_usuario_id, anuncioId: Number(id) });
+    }
     await auditar(actor, `anuncio.${accion}`, 'anuncio', id, { titulo: actual.titulo, estadoAnterior: actual.estado, motivo: evento.motivo, denunciasCerradas: cerradas }, ip);
     return { id: Number(id), estado: cambio.estado };
 };
