@@ -8,6 +8,17 @@ const postulacionModel = require('../models/postulacionModel');
 const emailService = require('./emailService');
 const notificacionService = require('./notificacionService');
 const { normalizarTelefono } = require('../utils/telefono');
+const { validarRespuestas } = require('../utils/cuestionario');
+
+// Las respuestas guardadas, tal como se preguntó al postularse.
+const aRespuestas = (lista) =>
+    (lista || []).map((r) => ({
+        id: r.id,
+        pregunta: r.pregunta,
+        tipo: r.tipo,
+        obligatoria: Boolean(r.obligatoria),
+        respuesta: r.respuesta ?? null,
+    }));
 
 const ESTADOS = ['NUEVA', 'VISTA', 'PRESELECCIONADA', 'DESCARTADA', 'CONTRATADA'];
 const MENSAJE_MAX = 1500;
@@ -68,6 +79,7 @@ const aRecibida = (f, base) => ({
     estado: f.estado,
     mensaje: f.mensaje,
     telefono: f.telefono,
+    respuestas: aRespuestas(f.respuestas),
     notaInterna: f.nota_interna,
     creadoEn: f.creado_en,
     actualizadoEn: f.actualizado_en,
@@ -87,6 +99,7 @@ const aEnviada = (f, base) => ({
     id: Number(f.id),
     estado: f.estado,
     mensaje: f.mensaje,
+    respuestas: aRespuestas(f.respuestas),
     creadoEn: f.creado_en,
     actualizadoEn: f.actualizado_en,
     cv: { nombre: f.cv_nombre, bytes: f.cv_bytes },
@@ -135,6 +148,18 @@ const postular = async ({ anuncioId, usuarioId, tipoCuenta, archivo, datos, fron
     const tel = normalizarTelefono(datos.telefono ?? null);
     if (!tel.ok) errores.telefono = 'El teléfono no es válido';
 
+    // El cuestionario de la vacante, si tiene. Llega como JSON en el multipart.
+    let entrada = {};
+    if (typeof datos.respuestas === 'string' && datos.respuestas.trim()) {
+        try {
+            entrada = JSON.parse(datos.respuestas);
+        } catch {
+            errores.respuestas = 'Las respuestas no son válidas';
+        }
+    }
+    const { respuestas, errores: erroresCuestionario } = validarRespuestas(anuncio.preguntas || [], entrada);
+    Object.assign(errores, erroresCuestionario);
+
     if (Object.keys(errores).length > 0) throw errorValidacion(errores);
 
     if (await postulacionModel.deUsuarioEnAnuncio(anuncio.id, usuarioId)) {
@@ -154,6 +179,7 @@ const postular = async ({ anuncioId, usuarioId, tipoCuenta, archivo, datos, fron
             postulanteId: usuarioId,
             mensaje: mensaje || null,
             telefono: tel.valor,
+            respuestas,
             cvKey,
             cvNombre: nombreSeguro(archivo.originalname),
             cvBytes: archivo.size,
@@ -241,7 +267,8 @@ const listarVacantes = async ({ usuarioId, tipoCuenta, base }) => {
             ubicacion: f.canton_nombre,
             sector: f.sector,
             categoria: f.categoria_nombre,
-            detalle: { jornada: f.jornada, modalidad: f.modalidad },
+            // preguntas = cuántas tiene el cuestionario (0: postulación rápida).
+            detalle: { jornada: f.jornada, modalidad: f.modalidad, preguntas: f.num_preguntas },
             portada: f.portada_key ? urlPublica(base, `/uploads/${f.portada_key}`) : null,
             vistas: f.vistas,
             publicadoEn: f.publicado_en,

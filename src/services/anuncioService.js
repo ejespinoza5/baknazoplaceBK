@@ -12,6 +12,7 @@ const moderacionModel = require('../models/moderacionModel');
 const moderacionService = require('./moderacionService');
 const { procesarFotoAnuncio, rutaAbsolutaDeStorageKey } = require('./imageService');
 const { validarLatitud, validarLongitud } = require('../utils/validaciones');
+const { validarPreguntas } = require('../utils/cuestionario');
 const { resolverContacto, telefonoLegible, enlaceWhatsapp } = require('../utils/telefono');
 const {
     PILARES,
@@ -88,7 +89,23 @@ const validarDetalle = (pilar, detalle, errores) => {
     // empleo
     if (!enumValida(d.jornada, 'jornada')) errores['detalle.jornada'] = 'Indica la jornada';
     if (!enumValida(d.modalidad, 'modalidad')) errores['detalle.modalidad'] = 'Indica la modalidad';
-    return { jornada: d.jornada, modalidad: d.modalidad };
+    // Sin preguntas, la postulación es rápida: solo el CV.
+    const cuestionario = validarPreguntas(d.preguntas);
+    if (cuestionario.error) errores['detalle.preguntas'] = cuestionario.error;
+    return { jornada: d.jornada, modalidad: d.modalidad, preguntas: cuestionario.preguntas || [] };
+};
+
+// Las preguntas de una vacante son texto público más: pasan por la misma
+// moderación que la descripción (se evalúan junto a ella).
+const textosPreguntas = (preguntas) => (preguntas || []).flatMap((p) => [p.texto, ...(p.opciones || [])]);
+const conPreguntas = (descripcion, preguntas) => [descripcion, ...textosPreguntas(preguntas)].filter(Boolean).join('\n') || null;
+
+// Si lo prohibido está en las preguntas y no en la descripción, el error se
+// marca en el cuestionario (sin decir el término, como siempre).
+const ubicarBloqueo = async (moderacion, descripcion, preguntas) => {
+    if (moderacion.campo !== 'descripcion' || textosPreguntas(preguntas).length === 0) return moderacion;
+    const sola = await moderacionService.evaluar({ titulo: '', descripcion, categoriaId: null });
+    return sola.decision === 'BLOQUEAR' ? moderacion : { ...moderacion, campo: 'detalle.preguntas' };
 };
 
 // Valida los campos comunes presentes en 'datos'. Con parcial=true solo valida los enviados.
@@ -207,7 +224,7 @@ const urlFoto = (base, storageKey) => urlPublica(base, `/uploads/${storageKey}`)
 const detalleDe = (fila) => {
     if (fila.pilar === 'productos') return { condicion: fila.condicion };
     if (fila.pilar === 'servicios') return { modalidadCobro: fila.modalidad_cobro, zonaCobertura: fila.zona_cobertura };
-    return { jornada: fila.jornada, modalidad: fila.modalidad };
+    return { jornada: fila.jornada, modalidad: fila.modalidad, preguntas: fila.preguntas || [] };
 };
 
 // Ningún número viaja aquí: `whatsapp` se mantiene por compatibilidad, siempre
@@ -382,7 +399,7 @@ const crear = async ({ usuario, datos, archivos, idempotencyKey, base }) => {
     const autor = await usuarioModel.buscarPorId(usuario.id);
     const moderacion = await moderacionService.evaluar({
         titulo: campos.titulo,
-        descripcion: campos.descripcion,
+        descripcion: conPreguntas(campos.descripcion, detalle.preguntas),
         categoriaId: campos.categoriaId,
         autorCreadoEn: autor?.creado_en,
     });
@@ -390,7 +407,7 @@ const crear = async ({ usuario, datos, archivos, idempotencyKey, base }) => {
         moderacionModel
             .registrarEvento({ usuarioId: usuario.id, accion: 'BLOQUEADO', motivo: moderacion.motivos[0], detalle: { titulo: campos.titulo, terminos: moderacion.terminos } })
             .catch(() => undefined);
-        throw moderacionService.errorDeBloqueo(moderacion);
+        throw moderacionService.errorDeBloqueo(await ubicarBloqueo(moderacion, campos.descripcion, detalle.preguntas));
     }
     const estadoInicial = moderacion.decision === 'REVISION' ? 'PENDIENTE_REVISION' : 'PUBLICADO';
 
@@ -758,14 +775,21 @@ const actualizar = async ({ id, usuarioId, datos, archivos, base }) => {
     // validar. Lo publicado puede volver a revisión, y un anuncio rechazado
     // que se corrige se reenvía a revisión: nunca se publica solo.
     let eventoModeracion = null;
-    const importante = ['titulo', 'descripcion', 'categoriaId'].some(
-        (c) => cambios[c] !== undefined && String(cambios[c] ?? '') !== String(actual[{ categoriaId: 'categoria_id' }[c] || c] ?? '')
-    );
+    const cambianPreguntas =
+        detalle?.preguntas !== undefined && JSON.stringify(textosPreguntas(detalle.preguntas)) !== JSON.stringify(textosPreguntas(actual.preguntas));
+    const importante =
+        cambianPreguntas ||
+        ['titulo', 'descripcion', 'categoriaId'].some(
+            (c) => cambios[c] !== undefined && String(cambios[c] ?? '') !== String(actual[{ categoriaId: 'categoria_id' }[c] || c] ?? '')
+        );
     if (importante && ['PUBLICADO', 'PAUSADO', 'RECHAZADO'].includes(actual.estado)) {
         const autor = await usuarioModel.buscarPorId(usuarioId);
         const moderacion = await moderacionService.evaluar({
             titulo: cambios.titulo ?? actual.titulo,
-            descripcion: cambios.descripcion !== undefined ? cambios.descripcion : actual.descripcion,
+            descripcion: conPreguntas(
+                cambios.descripcion !== undefined ? cambios.descripcion : actual.descripcion,
+                detalle?.preguntas ?? actual.preguntas
+            ),
             categoriaId: cambios.categoriaId ?? actual.categoria_id,
             autorCreadoEn: autor?.creado_en,
         });
@@ -773,7 +797,13 @@ const actualizar = async ({ id, usuarioId, datos, archivos, base }) => {
             moderacionModel
                 .registrarEvento({ anuncioId: actual.id, usuarioId, accion: 'BLOQUEADO', motivo: moderacion.motivos[0], detalle: { terminos: moderacion.terminos } })
                 .catch(() => undefined);
-            throw moderacionService.errorDeBloqueo(moderacion);
+            throw moderacionService.errorDeBloqueo(
+                await ubicarBloqueo(
+                    moderacion,
+                    cambios.descripcion !== undefined ? cambios.descripcion : actual.descripcion,
+                    detalle?.preguntas ?? actual.preguntas
+                )
+            );
         }
         const reenviado = actual.estado === 'RECHAZADO';
         if (reenviado || (moderacion.decision === 'REVISION' && actual.estado === 'PUBLICADO')) {

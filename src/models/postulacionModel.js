@@ -16,13 +16,13 @@ const SELECT_BASE = `
     LEFT JOIN negocios n ON n.id = a.autor_negocio_id`;
 
 // Devuelve null si esa persona ya se había postulado (UNIQUE anuncio+postulante).
-const crear = async ({ anuncioId, postulanteId, mensaje, telefono, cvKey, cvNombre, cvBytes }) => {
+const crear = async ({ anuncioId, postulanteId, mensaje, telefono, respuestas = [], cvKey, cvNombre, cvBytes }) => {
     const { rows } = await pool.query(
-        `INSERT INTO postulaciones (anuncio_id, postulante_id, mensaje, telefono, cv_key, cv_nombre, cv_bytes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO postulaciones (anuncio_id, postulante_id, mensaje, telefono, respuestas, cv_key, cv_nombre, cv_bytes)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
          ON CONFLICT (anuncio_id, postulante_id) DO NOTHING
          RETURNING id`,
-        [anuncioId, postulanteId, mensaje, telefono, cvKey, cvNombre, cvBytes]
+        [anuncioId, postulanteId, mensaje, telefono, JSON.stringify(respuestas), cvKey, cvNombre, cvBytes]
     );
     return rows[0]?.id ?? null;
 };
@@ -78,7 +78,7 @@ const listarVacantes = async (duenoId) => {
         `SELECT a.id, a.slug, a.titulo, a.estado, a.vendido, a.vendido_en, a.precio, a.moneda,
                 a.sector, a.vistas, a.publicado_en, a.creado_en,
                 c.nombre AS categoria_nombre, ca.nombre AS canton_nombre,
-                ae.jornada, ae.modalidad,
+                ae.jornada, ae.modalidad, COALESCE(jsonb_array_length(ae.preguntas), 0) AS num_preguntas,
                 f0.storage_key AS portada_key,
                 COALESCE(cuentas.total, 0)::int AS total,
                 COALESCE(cuentas.por_estado, '{}'::json) AS por_estado,

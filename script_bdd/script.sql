@@ -1447,3 +1447,13 @@ ALTER TABLE notificaciones ADD CONSTRAINT notificaciones_tipo_check CHECK (tipo 
     'SEGURIDAD', 'SOPORTE'));
 
 
+-- ============================================================
+-- Vacantes con cuestionario
+--  · preguntas vacío = postulación rápida (solo el CV). Si no, la lista de
+--    preguntas que eligió el negocio: [{id, texto, tipo, obligatoria, opciones?}]
+--    con tipo TEXTO (respuesta abierta), SI_NO u OPCION (una de una lista).
+--  · Cada postulación guarda la pregunta tal como estaba al postularse junto a
+--    su respuesta: si el negocio la edita después, lo respondido no cambia.
+-- ============================================================
+ALTER TABLE anuncio_empleo ADD COLUMN IF NOT EXISTS preguntas JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE postulaciones ADD COLUMN IF NOT EXISTS respuestas JSONB NOT NULL DEFAULT '[]'::jsonb;

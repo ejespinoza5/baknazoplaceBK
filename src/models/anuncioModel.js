@@ -7,7 +7,7 @@ const SELECT_BASE = `
            ca.nombre AS canton_nombre, ca.provincia_nombre,
            ap.condicion,
            asv.modalidad_cobro, asv.zona_cobertura,
-           ae.jornada, ae.modalidad,
+           ae.jornada, ae.modalidad, ae.preguntas,
            u.nombres AS autor_nombres, u.apellidos AS autor_apellidos,
            u.foto_perfil AS autor_foto, u.correo_verificado AS autor_verificado, u.estado AS autor_estado,
            -- Los teléfonos solo se usan para calcular telefonoVisible y en el reveal
@@ -94,9 +94,10 @@ const guardarDetalle = async (client, pilar, anuncioId, detalle) => {
         );
     } else if (pilar === 'empleo') {
         await client.query(
-            `INSERT INTO anuncio_empleo (anuncio_id, jornada, modalidad) VALUES ($1, $2, $3)
-             ON CONFLICT (anuncio_id) DO UPDATE SET jornada = EXCLUDED.jornada, modalidad = EXCLUDED.modalidad`,
-            [anuncioId, detalle.jornada, detalle.modalidad]
+            `INSERT INTO anuncio_empleo (anuncio_id, jornada, modalidad, preguntas) VALUES ($1, $2, $3, $4::jsonb)
+             ON CONFLICT (anuncio_id) DO UPDATE
+                 SET jornada = EXCLUDED.jornada, modalidad = EXCLUDED.modalidad, preguntas = EXCLUDED.preguntas`,
+            [anuncioId, detalle.jornada, detalle.modalidad, JSON.stringify(detalle.preguntas || [])]
         );
     }
 };
