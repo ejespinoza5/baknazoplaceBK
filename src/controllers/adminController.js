@@ -1,5 +1,6 @@
 const adminAuthService = require('../services/adminAuthService');
 const adminService = require('../services/adminService');
+const soporteService = require('../services/soporteService');
 const { ponerCookieAdmin, borrarCookieAdmin } = require('../middlewares/adminAuth');
 
 const baseUrl = (req) => `${req.protocol}://${req.get('host')}`;
@@ -88,6 +89,16 @@ module.exports = {
         adminService.asignarPermisos({ ...ctx(req), id: req.params.id, permisos: (req.body || {}).permisos })
     ),
     restablecerContrasena: accion((req) => adminService.restablecerContrasena({ ...ctx(req), id: req.params.id })),
+
+    listarSoporte: accion((req) => soporteService.listarHilos({ query: req.query })),
+    hiloSoporte: accion((req) => soporteService.obtenerHilo({ usuarioId: req.params.usuarioId, query: req.query })),
+    responderSoporte: accion(
+        (req) => soporteService.responder({ ...ctx(req), usuarioId: req.params.usuarioId, contenido: (req.body || {}).contenido }),
+        201
+    ),
+    estadoSoporte: accion((req) =>
+        soporteService.cambiarEstado({ ...ctx(req), usuarioId: req.params.usuarioId, estado: (req.body || {}).estado })
+    ),
 
     listarAuditoria: accion((req) => adminService.listarAuditoria({ query: req.query })),
 

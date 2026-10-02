@@ -2,6 +2,7 @@ const bcrypt = require('bcrypt');
 const env = require('../config/env');
 const adminModel = require('../models/adminModel');
 const moderacionModel = require('../models/moderacionModel');
+const soporteModel = require('../models/soporteModel');
 const catalogoModel = require('../models/catalogoModel');
 const moderacionService = require('./moderacionService');
 const adminAuthService = require('./adminAuthService');
@@ -59,10 +60,14 @@ const catalogos = () => ({
 // Cuánto espera atención, solo de lo que cada uno puede ver.
 const contadores = async ({ actor }) => {
     const puede = (p) => actor.esSuper || actor.permisos.includes(p);
-    const c = await moderacionModel.contadores();
+    const [c, soporte] = await Promise.all([
+        moderacionModel.contadores(),
+        puede('soporte.responder') ? soporteModel.contarPendientes() : null,
+    ]);
     return {
         ...(puede('anuncios.ver') ? { pendientes: c.pendientes } : {}),
         ...(puede('denuncias.ver') ? { denunciados: c.denunciados } : {}),
+        ...(soporte !== null ? { soporte } : {}),
     };
 };
 

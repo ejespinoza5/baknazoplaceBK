@@ -58,6 +58,12 @@ router.delete('/administradores/:id', requierePermiso('administradores.gestionar
 router.post('/administradores/:id/restablecer-contrasena', requierePermiso('administradores.gestionar'), c.restablecerContrasena);
 router.put('/administradores/:id/permisos', requierePermiso('permisos.gestionar'), c.asignarPermisos);
 
+// ---------- Soporte ----------
+router.get('/soporte', requierePermiso('soporte.responder'), c.listarSoporte);
+router.get('/soporte/:usuarioId', requierePermiso('soporte.responder'), c.hiloSoporte);
+router.post('/soporte/:usuarioId/mensajes', requierePermiso('soporte.responder'), c.responderSoporte);
+router.post('/soporte/:usuarioId/estado', requierePermiso('soporte.responder'), c.estadoSoporte);
+
 // ---------- Auditoría y moderación ----------
 router.get('/auditoria', requierePermiso('auditoria.ver'), c.listarAuditoria);
 router.get('/moderacion', requierePermiso('moderacion.configurar'), c.obtenerModeracion);

@@ -1393,3 +1393,57 @@ CREATE TABLE IF NOT EXISTS denuncias (
 CREATE INDEX IF NOT EXISTS idx_denuncias_pendientes ON denuncias (anuncio_id) WHERE estado = 'PENDIENTE';
 
 
+-- ============================================================
+-- Soporte: un hilo por usuario con el equipo de Baknazo
+--  · El usuario escribe desde la app; responde quien tenga el permiso
+--    soporte.responder en el panel. El usuario nunca ve qué administrador
+--    respondió: para él siempre es "Soporte Baknazo".
+--  · Al abrir el hilo (o reabrirlo tras resolverse) el sistema contesta solo
+--    que un administrador responderá: autor SISTEMA.
+--  · leido_en es "lo leyó el otro lado": el equipo lee lo del usuario y el
+--    usuario lee lo del equipo y del sistema.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS soporte_hilos (
+    usuario_id         UUID         PRIMARY KEY REFERENCES usuarios(id) ON DELETE CASCADE,
+    estado             VARCHAR(10)  NOT NULL DEFAULT 'ABIERTO' CHECK (estado IN ('ABIERTO', 'RESUELTO')),
+    creado_en          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    ultimo_mensaje_en  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    resuelto_por       UUID         REFERENCES administradores(id) ON DELETE SET NULL,
+    resuelto_en        TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_soporte_hilos_estado ON soporte_hilos (estado, ultimo_mensaje_en DESC);
+
+CREATE TABLE IF NOT EXISTS soporte_mensajes (
+    id          BIGSERIAL    PRIMARY KEY,
+    usuario_id  UUID         NOT NULL REFERENCES soporte_hilos(usuario_id) ON DELETE CASCADE,
+    autor       VARCHAR(10)  NOT NULL CHECK (autor IN ('USUARIO', 'ADMIN', 'SISTEMA')),
+    -- Quién respondió (solo autor ADMIN). Lo ve el panel, nunca el usuario.
+    admin_id    UUID         REFERENCES administradores(id) ON DELETE SET NULL,
+    contenido   TEXT         NOT NULL CHECK (char_length(contenido) BETWEEN 1 AND 2000),
+    creado_en   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    leido_en    TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_soporte_mensajes_hilo ON soporte_mensajes (usuario_id, id DESC);
+-- Lo que espera respuesta del equipo (el contador del panel).
+CREATE INDEX IF NOT EXISTS idx_soporte_sin_leer_equipo ON soporte_mensajes (usuario_id)
+    WHERE autor = 'USUARIO' AND leido_en IS NULL;
+
+-- Nuevo permiso del panel.
+ALTER TABLE administrador_permisos DROP CONSTRAINT IF EXISTS administrador_permisos_permiso_check;
+ALTER TABLE administrador_permisos ADD CONSTRAINT administrador_permisos_permiso_check CHECK (permiso IN (
+    'anuncios.ver', 'anuncios.aprobar', 'anuncios.rechazar', 'anuncios.pausar', 'anuncios.eliminar',
+    'usuarios.ver', 'usuarios.suspender', 'usuarios.reactivar',
+    'denuncias.ver', 'denuncias.resolver',
+    'estadisticas.ver', 'administradores.gestionar', 'permisos.gestionar',
+    'moderacion.configurar', 'auditoria.ver',
+    'soporte.responder'));
+
+-- Nuevo tipo de notificación: respondió el equipo de soporte.
+ALTER TABLE notificaciones DROP CONSTRAINT IF EXISTS notificaciones_tipo_check;
+ALTER TABLE notificaciones ADD CONSTRAINT notificaciones_tipo_check CHECK (tipo IN (
+    'SEGUIDOR', 'ME_GUSTA', 'COMENTARIO', 'RESPUESTA', 'GUARDADO', 'MENSAJE',
+    'ANUNCIO_APROBADO', 'ANUNCIO_RECHAZADO', 'ANUNCIO_VENCIDO',
+    'NUEVA_VACANTE', 'POSTULACION_NUEVA', 'POSTULACION_ESTADO', 'CV_REVISADO',
+    'SEGURIDAD', 'SOPORTE'));
+
+

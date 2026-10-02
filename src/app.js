@@ -15,6 +15,7 @@ const postulacionRoutes = require('./routes/postulacionRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const notificacionRoutes = require('./routes/notificacionRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const soporteRoutes = require('./routes/soporteRoutes');
 const { adjuntarChat } = require('./realtime/chatSocket');
 const notificacionService = require('./services/notificacionService');
 const app = express();
@@ -63,6 +64,9 @@ app.use('/api/chat', chatRoutes);
 
 // Notificaciones: historial de la campana, preferencias y dispositivos push.
 app.use('/api/notificaciones', notificacionRoutes);
+
+// Soporte: el hilo de cada usuario con el equipo de Baknazo.
+app.use('/api/soporte', soporteRoutes);
 
 // Panel de administración y moderación (sesión y permisos propios).
 app.use('/api/admin', adminRoutes);

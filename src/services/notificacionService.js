@@ -22,6 +22,7 @@ const CATEGORIA = {
     POSTULACION_ESTADO: 'empleo',
     CV_REVISADO: 'empleo',
     SEGURIDAD: 'seguridad',
+    SOPORTE: 'mensajes',
 };
 const CATEGORIAS = ['seguidores', 'interacciones', 'mensajes', 'publicaciones', 'empleo', 'seguridad'];
 // Lo que pasa con tus publicaciones y con tu cuenta siempre se ve dentro de
@@ -46,6 +47,7 @@ const TEXTO_PUSH = {
     POSTULACION_ESTADO: 'Tu postulación tiene novedades',
     CV_REVISADO: 'Una empresa revisó tu hoja de vida',
     SEGURIDAD: 'Alerta de seguridad en tu cuenta',
+    SOPORTE: 'El equipo de Baknazo respondió tu consulta',
 };
 
 // Un push por grupo cada tanto: veinte likes seguidos no son veinte avisos.
@@ -150,6 +152,11 @@ const componer = (f) => {
                         ? 'Se restableció la contraseña de tu cuenta con un código enviado a tu correo. Si no fuiste tú, cámbiala ahora.'
                         : 'Se cambió la contraseña de tu cuenta y se cerraron las demás sesiones. Si no fuiste tú, cámbiala ahora.',
                 url: '/configuracion?seccion=seguridad',
+            };
+        case 'SOPORTE':
+            return {
+                texto: f.cantidad > 1 ? `Soporte Baknazo te envió ${f.cantidad} mensajes` : 'Soporte Baknazo respondió tu consulta',
+                url: '/configuracion?seccion=soporte',
             };
         default:
             return { texto: 'Tienes una notificación nueva', url: '/notificaciones' };
@@ -402,5 +409,9 @@ module.exports = {
     // Para el chat: leer la conversación apaga su aviso de mensajes.
     marcarLeidasDeConversacion: async (usuarioId, conversacionId) => {
         if ((await notificacionModel.marcarLeidasDeConversacion(usuarioId, conversacionId)) > 0) await avisarConteo(usuarioId);
+    },
+    // Para el soporte: leerlo apaga su aviso.
+    marcarLeidasDeSoporte: async (usuarioId) => {
+        if ((await notificacionModel.marcarLeidasDeSoporte(usuarioId)) > 0) await avisarConteo(usuarioId);
     },
 };

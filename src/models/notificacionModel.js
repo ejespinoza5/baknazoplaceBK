@@ -108,6 +108,15 @@ const marcarLeidasDeConversacion = async (usuarioId, conversacionId) => {
     return rowCount;
 };
 
+const marcarLeidasDeSoporte = async (usuarioId) => {
+    const { rowCount } = await pool.query(
+        `UPDATE notificaciones SET leida_en = NOW()
+         WHERE usuario_id = $1 AND tipo = 'SOPORTE' AND leida_en IS NULL`,
+        [usuarioId]
+    );
+    return rowCount;
+};
+
 const eliminar = async (usuarioId, id) => {
     const { rowCount } = await pool.query('DELETE FROM notificaciones WHERE usuario_id = $1 AND id = $2', [usuarioId, id]);
     return rowCount > 0;
@@ -235,6 +244,7 @@ module.exports = {
     contarNoLeidas,
     marcarLeidas,
     marcarLeidasDeConversacion,
+    marcarLeidasDeSoporte,
     eliminar,
     marcarPushEnviado,
     tomarPendientes,

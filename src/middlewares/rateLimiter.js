@@ -108,6 +108,19 @@ module.exports = {
         keyGenerator: (req) => `usuario:${req.usuario.id}`,
         message: { error: 'Demasiadas revisiones seguidas. Espera un momento.' },
     }),
+    // Mensajes a soporte: por usuario. De sobra para explicar un problema,
+    // corta a quien quiera llenar la bandeja del equipo.
+    limitadorSoporte: rateLimit({
+        windowMs: 15 * 60 * 1000,
+        max: 30,
+        standardHeaders: true,
+        legacyHeaders: false,
+        keyGenerator: (req) => `usuario:${req.usuario.id}`,
+        message: {
+            error: 'Enviaste muchos mensajes seguidos. Espera un momento; el equipo ya tiene los anteriores.',
+            message: 'Enviaste muchos mensajes seguidos. Espera un momento; el equipo ya tiene los anteriores.',
+        },
+    }),
     // Login del panel: por IP. Además, cada cuenta se bloquea 15 min tras 5 fallos.
     limitadorLoginAdmin: crearLimitador(15, 10, 'Demasiados intentos de inicio de sesión. Intenta más tarde.'),
     // Postularse sube un PDF: por usuario, y bastante más bajo que un like.

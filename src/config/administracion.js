@@ -18,6 +18,7 @@ const PERMISOS = [
     { id: 'permisos.gestionar', grupo: 'Administración', nombre: 'Gestionar permisos' },
     { id: 'moderacion.configurar', grupo: 'Administración', nombre: 'Configurar moderación' },
     { id: 'auditoria.ver', grupo: 'Administración', nombre: 'Consultar auditoría' },
+    { id: 'soporte.responder', grupo: 'Soporte', nombre: 'Leer y responder mensajes de soporte' },
 ];
 const IDS_PERMISOS = PERMISOS.map((p) => p.id);
 
