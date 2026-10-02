@@ -893,6 +893,27 @@ const quitarLike = async ({ id, usuarioId }) => {
     return anuncioModel.estadoLike(fila.id, usuarioId);
 };
 
+// ---------- Revisión previa ----------
+
+/**
+ * Lo que diría la moderación del texto mientras se escribe: si se podría
+ * publicar, iría a revisión o está bloqueado, y en qué campo. NUNCA qué
+ * término fue (así no se afina el texto hasta esquivar el filtro). Las mismas
+ * reglas que al publicar; el servidor vuelve a evaluar al guardar.
+ */
+const revisarTexto = async ({ usuarioId, datos }) => {
+    const titulo = typeof datos.titulo === 'string' ? datos.titulo.slice(0, TITULO_MAX) : '';
+    const descripcion = typeof datos.descripcion === 'string' ? datos.descripcion.slice(0, DESCRIPCION_MAX) : '';
+    const categoriaId = Number.isInteger(Number(datos.categoriaId)) ? Number(datos.categoriaId) : null;
+    const autor = await usuarioModel.buscarPorId(usuarioId);
+    const r = await moderacionService.evaluar({ titulo, descripcion, categoriaId, autorCreadoEn: autor?.creado_en });
+    if (r.decision === 'BLOQUEAR') {
+        return { decision: 'BLOQUEAR', campo: r.motivos.includes('CATEGORIA_PROHIBIDA') ? 'categoriaId' : r.campo || 'titulo' };
+    }
+    // Revisión por términos o por ser cuenta nueva: solo se dice que pasará por revisión.
+    return { decision: r.decision };
+};
+
 // ---------- Denuncias ----------
 
 // Cualquiera con sesión puede denunciar un anuncio público que no sea suyo.
@@ -966,6 +987,7 @@ const registrarVistas = async ({ ids, visitante, usuarioId }) => {
 };
 
 module.exports = {
+    revisarTexto,
     denunciar,
     guardar,
     quitarGuardado,

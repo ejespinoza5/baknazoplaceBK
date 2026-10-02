@@ -143,6 +143,15 @@ const quitarLike = async (req, res, next) => {
     }
 };
 
+const revisarTexto = async (req, res, next) => {
+    try {
+        res.set('Cache-Control', 'private, no-store');
+        res.json(await anuncioService.revisarTexto({ usuarioId: req.usuario.id, datos: req.body || {} }));
+    } catch (err) {
+        next(err);
+    }
+};
+
 const denunciar = async (req, res, next) => {
     try {
         const { motivo, detalle } = req.body || {};
@@ -192,6 +201,7 @@ const registrarVistas = async (req, res, next) => {
 };
 
 module.exports = {
+    revisarTexto,
     denunciar,
     crear,
     listar,

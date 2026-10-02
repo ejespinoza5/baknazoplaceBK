@@ -97,6 +97,17 @@ module.exports = {
             message: 'Enviaste demasiadas denuncias. Espera un rato.',
         },
     }),
+    // Revisión del texto mientras se escribe: el formulario la pide con pausa
+    // (una por frase, no por tecla). Esto deja editar con holgura y frena a
+    // quien quiera probar palabras en bucle para adivinar el diccionario.
+    limitadorRevisionTexto: rateLimit({
+        windowMs: 15 * 60 * 1000,
+        max: 120,
+        standardHeaders: true,
+        legacyHeaders: false,
+        keyGenerator: (req) => `usuario:${req.usuario.id}`,
+        message: { error: 'Demasiadas revisiones seguidas. Espera un momento.' },
+    }),
     // Login del panel: por IP. Además, cada cuenta se bloquea 15 min tras 5 fallos.
     limitadorLoginAdmin: crearLimitador(15, 10, 'Demasiados intentos de inicio de sesión. Intenta más tarde.'),
     // Postularse sube un PDF: por usuario, y bastante más bajo que un like.

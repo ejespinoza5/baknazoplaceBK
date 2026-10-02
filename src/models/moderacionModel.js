@@ -275,6 +275,16 @@ const cambiarEstadoUsuario = async (id, estado) => {
     }
 };
 
+// Lo que espera atención, para los avisos del panel (una sola consulta liviana).
+const contadores = async () => {
+    const { rows } = await pool.query(`
+        SELECT
+            (SELECT COUNT(*)::int FROM anuncios WHERE estado = 'PENDIENTE_REVISION') AS pendientes,
+            (SELECT COUNT(DISTINCT anuncio_id)::int FROM denuncias WHERE estado = 'PENDIENTE') AS denunciados
+    `);
+    return rows[0];
+};
+
 // ---------- Estadísticas ----------
 
 const estadisticas = async () => {
@@ -321,5 +331,6 @@ module.exports = {
     listarUsuarios,
     usuarioBasico,
     cambiarEstadoUsuario,
+    contadores,
     estadisticas,
 };

@@ -57,6 +57,7 @@ module.exports = {
 
     // ---------- Panel ----------
     catalogos: accion(() => adminService.catalogos()),
+    contadores: accion((req) => adminService.contadores({ actor: req.admin })),
     estadisticas: accion(() => adminService.estadisticas()),
 
     listarAnuncios: accion((req) => adminService.listarAnuncios({ query: req.query, base: baseUrl(req) })),

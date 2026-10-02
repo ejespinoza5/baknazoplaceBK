@@ -54,6 +54,18 @@ const catalogos = () => ({
     motivosRevision: MOTIVOS_REVISION,
 });
 
+// ---------- Avisos ----------
+
+// Cuánto espera atención, solo de lo que cada uno puede ver.
+const contadores = async ({ actor }) => {
+    const puede = (p) => actor.esSuper || actor.permisos.includes(p);
+    const c = await moderacionModel.contadores();
+    return {
+        ...(puede('anuncios.ver') ? { pendientes: c.pendientes } : {}),
+        ...(puede('denuncias.ver') ? { denunciados: c.denunciados } : {}),
+    };
+};
+
 // ---------- Estadísticas ----------
 
 const estadisticas = async () => {
@@ -459,6 +471,7 @@ const eliminarPalabra = async ({ actor, id, ip }) => {
 
 module.exports = {
     catalogos,
+    contadores,
     estadisticas,
     listarAnuncios,
     detalleAnuncio,

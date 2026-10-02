@@ -11,6 +11,7 @@ const {
     limitadorPostulacion,
     limitadorVistas,
     limitadorDenuncia,
+    limitadorRevisionTexto,
 } = require('../middlewares/rateLimiter');
 
 // Feed público. La sesión es opcional: sin token se ve igual, y con token el
@@ -26,6 +27,11 @@ router.get('/guardados', requiereAutenticacion, anuncioController.listarGuardado
 // Vistas de la lista: publicaciones que se vieron en pantalla sin abrirlas.
 // Sesión opcional: sin ella cuenta por huella anónima.
 router.post('/vistas', autenticacionOpcional, limitadorVistas, anuncioController.registrarVistas);
+
+// Revisión previa del texto mientras se escribe { titulo, descripcion, categoriaId }:
+// dice si se bloquearía o iría a revisión, nunca qué término. Con límite por
+// usuario para que no sirva para adivinar el diccionario.
+router.post('/revisar-texto', requiereAutenticacion, limitadorRevisionTexto, anuncioController.revisarTexto);
 
 // Publicar: un solo multipart (campo 'datos' JSON + 'fotos' 0..6). La autenticación va antes de multer.
 router.post('/', requiereAutenticacion, limitadorPublicacion, uploadFotosAnuncio, anuncioController.crear);

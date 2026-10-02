@@ -28,6 +28,8 @@ router.get('/auth/sesiones', c.sesiones);
 router.post('/auth/cerrar-sesiones', c.cerrarOtrasSesiones);
 
 router.get('/catalogos', c.catalogos);
+// Lo que espera atención (filtrado por permisos dentro), para los avisos del panel.
+router.get('/contadores', c.contadores);
 router.get('/estadisticas', requierePermiso('estadisticas.ver'), c.estadisticas);
 
 // ---------- Anuncios ----------
