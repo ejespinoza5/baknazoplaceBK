@@ -197,12 +197,12 @@ const moderarAnuncio = async (id, cambio, evento) => {
         }
         await client.query(
             `UPDATE anuncios SET
-                 estado = $2,
-                 notas_moderacion = CASE WHEN $3::boolean THEN $4 ELSE notas_moderacion END,
+                 estado = $2::text,
+                 notas_moderacion = CASE WHEN $3::boolean THEN $4::text ELSE notas_moderacion END,
                  pausa_administrativa = $5,
-                 motivo_revision = CASE WHEN $2 = 'PENDIENTE_REVISION' THEN motivo_revision ELSE NULL END,
-                 publicado_en = CASE WHEN $2 = 'PUBLICADO' THEN COALESCE(publicado_en, date_trunc('milliseconds', NOW())) ELSE publicado_en END,
-                 eliminado_en = CASE WHEN $2 = 'ELIMINADO' THEN NOW() ELSE eliminado_en END
+                 motivo_revision = CASE WHEN $2::text = 'PENDIENTE_REVISION' THEN motivo_revision ELSE NULL END,
+                 publicado_en = CASE WHEN $2::text = 'PUBLICADO' THEN COALESCE(publicado_en, date_trunc('milliseconds', NOW())) ELSE publicado_en END,
+                 eliminado_en = CASE WHEN $2::text = 'ELIMINADO' THEN NOW() ELSE eliminado_en END
              WHERE id = $1`,
             [id, cambio.estado, cambio.notas !== undefined, cambio.notas ?? null, Boolean(cambio.pausaAdministrativa)]
         );

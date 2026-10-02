@@ -52,8 +52,8 @@ const insertar = async (client, d) => {
          )
          -- La moderación decide: PUBLICADO sale ya; PENDIENTE_REVISION espera
          -- a un administrador y no tiene fecha de publicación.
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-                 CASE WHEN $15 = 'PUBLICADO' THEN date_trunc('milliseconds', NOW()) END, $16)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::text,
+                 CASE WHEN $15::text = 'PUBLICADO' THEN date_trunc('milliseconds', NOW()) END, $16)
          RETURNING id`,
         [
             d.slug,
