@@ -85,6 +85,20 @@ module.exports = {
             message: 'Demasiados cambios en las notificaciones push. Espera un momento.',
         },
     }),
+    // Denuncias: por usuario. Frena a quien quiera tumbar anuncios ajenos a base de denuncias.
+    limitadorDenuncia: rateLimit({
+        windowMs: 60 * 60 * 1000,
+        max: 20,
+        standardHeaders: true,
+        legacyHeaders: false,
+        keyGenerator: (req) => `usuario:${req.usuario.id}`,
+        message: {
+            error: 'Enviaste demasiadas denuncias. Espera un rato.',
+            message: 'Enviaste demasiadas denuncias. Espera un rato.',
+        },
+    }),
+    // Login del panel: por IP. Además, cada cuenta se bloquea 15 min tras 5 fallos.
+    limitadorLoginAdmin: crearLimitador(15, 10, 'Demasiados intentos de inicio de sesión. Intenta más tarde.'),
     // Postularse sube un PDF: por usuario, y bastante más bajo que un like.
     limitadorPostulacion: rateLimit({
         windowMs: 60 * 60 * 1000,

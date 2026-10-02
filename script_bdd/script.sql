@@ -1219,3 +1219,177 @@ CREATE TRIGGER trg_anuncios_moderacion
     EXECUTE FUNCTION notificar_moderacion_anuncio();
 
 
+-- ============================================================
+-- Moderación y panel de administración
+--  · Los administradores son cuentas aparte de los usuarios del marketplace:
+--    ningún token de usuario sirve en el panel, ni al revés.
+--  · Sesiones del panel: token opaco en cookie HttpOnly, guardado como hash.
+--    Desactivar a alguien o "cerrar sesiones" corta el acceso al instante.
+--  · Moderación por reglas (sin IA): términos que mandan a revisión o
+--    bloquean, categorías prohibidas, revisión de cuentas nuevas y denuncias.
+-- ============================================================
+
+-- Estado nuevo: en revisión. Nunca es público (lo público es solo PUBLICADO).
+ALTER TABLE anuncios DROP CONSTRAINT IF EXISTS anuncios_estado_check;
+ALTER TABLE anuncios ADD CONSTRAINT anuncios_estado_check
+    CHECK (estado IN ('BORRADOR', 'PENDIENTE_REVISION', 'PUBLICADO', 'PAUSADO', 'RECHAZADO', 'ELIMINADO'));
+
+-- Una pausa puesta por moderación: el dueño no puede reanudarla.
+ALTER TABLE anuncios ADD COLUMN IF NOT EXISTS pausa_administrativa BOOLEAN NOT NULL DEFAULT FALSE;
+-- Por qué está en revisión (códigos de regla), para quien modera.
+ALTER TABLE anuncios ADD COLUMN IF NOT EXISTS motivo_revision VARCHAR(200);
+CREATE INDEX IF NOT EXISTS idx_anuncios_pendientes ON anuncios (creado_en) WHERE estado = 'PENDIENTE_REVISION';
+
+-- Aprobar un anuncio que esperaba revisión también se avisa al dueño.
+CREATE OR REPLACE FUNCTION notificar_moderacion_anuncio()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.estado = 'RECHAZADO' THEN
+        INSERT INTO notificaciones (usuario_id, tipo, anuncio_id)
+        VALUES (NEW.autor_usuario_id, 'ANUNCIO_RECHAZADO', NEW.id);
+    ELSIF OLD.estado IN ('RECHAZADO', 'PENDIENTE_REVISION') AND NEW.estado = 'PUBLICADO' THEN
+        INSERT INTO notificaciones (usuario_id, tipo, anuncio_id)
+        VALUES (NEW.autor_usuario_id, 'ANUNCIO_APROBADO', NEW.id);
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TABLE IF NOT EXISTS administradores (
+    id                       UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    nombre                   VARCHAR(120) NOT NULL,
+    correo                   CITEXT       NOT NULL,
+    contrasena_hash          TEXT         NOT NULL,
+    -- Tiene todos los permisos y nadie más puede tocarlo. Hay uno solo.
+    es_super                 BOOLEAN      NOT NULL DEFAULT FALSE,
+    activo                   BOOLEAN      NOT NULL DEFAULT TRUE,
+    -- Las contraseñas temporales (inicial y restablecidas) obligan a cambiarla.
+    debe_cambiar_contrasena  BOOLEAN      NOT NULL DEFAULT TRUE,
+    intentos_fallidos        INTEGER      NOT NULL DEFAULT 0,
+    bloqueado_hasta          TIMESTAMPTZ,
+    ultimo_acceso_en         TIMESTAMPTZ,
+    contrasena_cambiada_en   TIMESTAMPTZ,
+    creado_por               UUID         REFERENCES administradores(id) ON DELETE SET NULL,
+    creado_en                TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    actualizado_en           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    -- Revocado: no se borra para conservar su rastro en la auditoría.
+    eliminado_en             TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_administradores_correo ON administradores (correo) WHERE eliminado_en IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_administradores_super ON administradores (es_super) WHERE es_super AND eliminado_en IS NULL;
+
+DROP TRIGGER IF EXISTS trg_administradores_actualizado ON administradores;
+CREATE TRIGGER trg_administradores_actualizado
+    BEFORE UPDATE ON administradores
+    FOR EACH ROW
+    EXECUTE FUNCTION set_actualizado_en();
+
+CREATE TABLE IF NOT EXISTS administrador_permisos (
+    admin_id      UUID        NOT NULL REFERENCES administradores(id) ON DELETE CASCADE,
+    permiso       VARCHAR(40) NOT NULL CHECK (permiso IN (
+                      'anuncios.ver', 'anuncios.aprobar', 'anuncios.rechazar', 'anuncios.pausar', 'anuncios.eliminar',
+                      'usuarios.ver', 'usuarios.suspender', 'usuarios.reactivar',
+                      'denuncias.ver', 'denuncias.resolver',
+                      'estadisticas.ver', 'administradores.gestionar', 'permisos.gestionar',
+                      'moderacion.configurar', 'auditoria.ver')),
+    otorgado_por  UUID        REFERENCES administradores(id) ON DELETE SET NULL,
+    otorgado_en   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (admin_id, permiso)
+);
+
+CREATE TABLE IF NOT EXISTS sesiones_admin (
+    id             BIGSERIAL    PRIMARY KEY,
+    admin_id       UUID         NOT NULL REFERENCES administradores(id) ON DELETE CASCADE,
+    token_hash     TEXT         NOT NULL UNIQUE,
+    ip             VARCHAR(64),
+    user_agent     VARCHAR(255),
+    creado_en      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    ultimo_uso_en  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    expira_en      TIMESTAMPTZ  NOT NULL,
+    revocada_en    TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_sesiones_admin_admin ON sesiones_admin (admin_id) WHERE revocada_en IS NULL;
+
+-- Todo lo que hace un administrador queda aquí, con quién, qué y cuándo.
+CREATE TABLE IF NOT EXISTS auditoria_admin (
+    id             BIGSERIAL    PRIMARY KEY,
+    admin_id       UUID         REFERENCES administradores(id) ON DELETE SET NULL,
+    accion         VARCHAR(60)  NOT NULL,
+    objetivo_tipo  VARCHAR(30),
+    objetivo_id    VARCHAR(64),
+    detalle        JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    ip             VARCHAR(64),
+    creado_en      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_auditoria_admin_fecha ON auditoria_admin (creado_en DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_auditoria_admin_admin ON auditoria_admin (admin_id, creado_en DESC);
+
+-- Configuración de la moderación (una sola fila).
+CREATE TABLE IF NOT EXISTS moderacion_config (
+    id                        SMALLINT     PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    revision_usuarios_nuevos  BOOLEAN      NOT NULL DEFAULT FALSE,
+    dias_usuario_nuevo        INTEGER      NOT NULL DEFAULT 7 CHECK (dias_usuario_nuevo BETWEEN 1 AND 365),
+    -- Denuncias de personas distintas que mandan un anuncio a revisión.
+    umbral_denuncias          INTEGER      NOT NULL DEFAULT 3 CHECK (umbral_denuncias BETWEEN 1 AND 100),
+    categorias_prohibidas     INTEGER[]    NOT NULL DEFAULT '{}',
+    actualizado_por           UUID         REFERENCES administradores(id) ON DELETE SET NULL,
+    actualizado_en            TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+INSERT INTO moderacion_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- Diccionario: REVISION manda el anuncio a revisión manual; BLOQUEO no deja
+-- publicarlo. El término se guarda normalizado (minúsculas, sin tildes).
+CREATE TABLE IF NOT EXISTS moderacion_palabras (
+    id          SERIAL       PRIMARY KEY,
+    termino     VARCHAR(80)  NOT NULL UNIQUE,
+    nivel       VARCHAR(10)  NOT NULL CHECK (nivel IN ('REVISION', 'BLOQUEO')),
+    creado_por  UUID         REFERENCES administradores(id) ON DELETE SET NULL,
+    creado_en   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+-- Lista inicial de ejemplo: se edita desde el panel.
+INSERT INTO moderacion_palabras (termino, nivel) VALUES
+    ('cocaina', 'BLOQUEO'), ('marihuana', 'BLOQUEO'), ('arma de fuego', 'BLOQUEO'),
+    ('municiones', 'BLOQUEO'), ('documentos falsos', 'BLOQUEO'), ('cedula falsa', 'BLOQUEO'),
+    ('titulo falso', 'BLOQUEO'),
+    ('replica', 'REVISION'), ('imitacion', 'REVISION'), ('sin receta', 'REVISION'),
+    ('inversion garantizada', 'REVISION'), ('ganancias aseguradas', 'REVISION'),
+    ('trabajo desde casa', 'REVISION'), ('pistola', 'REVISION'), ('fauna silvestre', 'REVISION')
+ON CONFLICT (termino) DO NOTHING;
+
+-- Historial de moderación de cada anuncio: qué pasó, por qué y quién
+-- (admin_id NULL = lo decidió una regla automática).
+CREATE TABLE IF NOT EXISTS moderacion_eventos (
+    id               BIGSERIAL    PRIMARY KEY,
+    anuncio_id       BIGINT       REFERENCES anuncios(id) ON DELETE CASCADE,
+    usuario_id       UUID         REFERENCES usuarios(id) ON DELETE CASCADE,
+    accion           VARCHAR(30)  NOT NULL CHECK (accion IN (
+                         'ENVIADO_A_REVISION', 'BLOQUEADO', 'APROBADO', 'RECHAZADO', 'PAUSADO',
+                         'ELIMINADO', 'DENUNCIAS_DESESTIMADAS', 'REENVIADO')),
+    estado_anterior  VARCHAR(20),
+    estado_nuevo     VARCHAR(20),
+    motivo           VARCHAR(40),
+    nota             TEXT,
+    admin_id         UUID         REFERENCES administradores(id) ON DELETE SET NULL,
+    detalle          JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    creado_en        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_moderacion_eventos_anuncio ON moderacion_eventos (anuncio_id, creado_en DESC);
+
+-- Denuncias de usuarios. Una por persona y anuncio.
+CREATE TABLE IF NOT EXISTS denuncias (
+    id              BIGSERIAL    PRIMARY KEY,
+    anuncio_id      BIGINT       NOT NULL REFERENCES anuncios(id) ON DELETE CASCADE,
+    denunciante_id  UUID         NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    motivo          VARCHAR(30)  NOT NULL CHECK (motivo IN (
+                        'PROHIBIDO', 'ESTAFA', 'OFENSIVO', 'FALSO', 'DUPLICADO', 'OTRO')),
+    detalle         VARCHAR(500),
+    estado          VARCHAR(15)  NOT NULL DEFAULT 'PENDIENTE'
+        CHECK (estado IN ('PENDIENTE', 'RESUELTA', 'DESESTIMADA')),
+    resuelta_por    UUID         REFERENCES administradores(id) ON DELETE SET NULL,
+    resuelta_en     TIMESTAMPTZ,
+    creado_en       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    UNIQUE (anuncio_id, denunciante_id)
+);
+CREATE INDEX IF NOT EXISTS idx_denuncias_pendientes ON denuncias (anuncio_id) WHERE estado = 'PENDIENTE';
+
+

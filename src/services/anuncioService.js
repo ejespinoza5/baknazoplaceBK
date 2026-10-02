@@ -7,6 +7,9 @@ const negocioModel = require('../models/negocioModel');
 const postulacionService = require('./postulacionService');
 const notificacionService = require('./notificacionService');
 const notificacionModel = require('../models/notificacionModel');
+const usuarioModel = require('../models/usuarioModel');
+const moderacionModel = require('../models/moderacionModel');
+const moderacionService = require('./moderacionService');
 const { procesarFotoAnuncio, rutaAbsolutaDeStorageKey } = require('./imageService');
 const { validarLatitud, validarLongitud } = require('../utils/validaciones');
 const { resolverContacto, telefonoLegible, enlaceWhatsapp } = require('../utils/telefono');
@@ -221,8 +224,12 @@ const autorDe = (fila, base) => ({
     whatsapp: null,
 });
 
+// Público = publicado, vigente y de una cuenta activa (suspender oculta todo).
 const estaVisible = (fila) =>
-    fila.estado === 'PUBLICADO' && !fila.eliminado_en && (!fila.expira_en || new Date(fila.expira_en) > new Date());
+    fila.estado === 'PUBLICADO' &&
+    !fila.eliminado_en &&
+    (!fila.expira_en || new Date(fila.expira_en) > new Date()) &&
+    (fila.autor_estado === undefined || fila.autor_estado === 'ACTIVO');
 
 const contactoDe = (fila) =>
     resolverContacto({
@@ -321,6 +328,8 @@ const aAnuncio = (fila, fotos, base, esMio, meGusta = false) => {
         anuncio.latitud = fila.latitud === null ? null : Number(fila.latitud);
         anuncio.longitud = fila.longitud === null ? null : Number(fila.longitud);
         anuncio.notasModeracion = fila.notas_moderacion;
+        // Una pausa de moderación no la puede levantar el dueño.
+        anuncio.pausaAdministrativa = Boolean(fila.pausa_administrativa);
     }
     return anuncio;
 };
@@ -368,6 +377,23 @@ const crear = async ({ usuario, datos, archivos, idempotencyKey, base }) => {
     if (archivos.length > MAX_FOTOS) errores.fotos = `Máximo ${MAX_FOTOS} fotos por anuncio`;
     if (Object.keys(errores).length > 0) throw errorValidacion(errores);
 
+    // Moderación por reglas: lo prohibido no se publica, lo dudoso espera
+    // revisión y lo normal sale ya.
+    const autor = await usuarioModel.buscarPorId(usuario.id);
+    const moderacion = await moderacionService.evaluar({
+        titulo: campos.titulo,
+        descripcion: campos.descripcion,
+        categoriaId: campos.categoriaId,
+        autorCreadoEn: autor?.creado_en,
+    });
+    if (moderacion.decision === 'BLOQUEAR') {
+        moderacionModel
+            .registrarEvento({ usuarioId: usuario.id, accion: 'BLOQUEADO', motivo: moderacion.motivos[0], detalle: { titulo: campos.titulo, terminos: moderacion.terminos } })
+            .catch(() => undefined);
+        throw moderacionService.errorDeBloqueo(moderacion);
+    }
+    const estadoInicial = moderacion.decision === 'REVISION' ? 'PENDIENTE_REVISION' : 'PUBLICADO';
+
     // Las cuentas de negocio publican en nombre de su negocio.
     const negocio = usuario.tipo_cuenta === 'NEGOCIO' ? await negocioModel.buscarPorUsuario(usuario.id) : null;
 
@@ -383,7 +409,22 @@ const crear = async ({ usuario, datos, archivos, idempotencyKey, base }) => {
             pilar,
             autorUsuarioId: usuario.id,
             autorNegocioId: negocio ? negocio.id : null,
+            estado: estadoInicial,
+            motivoRevision: estadoInicial === 'PENDIENTE_REVISION' ? moderacion.motivos.join(',') : null,
         });
+        if (estadoInicial === 'PENDIENTE_REVISION') {
+            await moderacionModel.registrarEvento(
+                {
+                    anuncioId,
+                    usuarioId: usuario.id,
+                    accion: 'ENVIADO_A_REVISION',
+                    estadoNuevo: 'PENDIENTE_REVISION',
+                    motivo: moderacion.motivos[0],
+                    detalle: { motivos: moderacion.motivos, terminos: moderacion.terminos },
+                },
+                client
+            );
+        }
         await anuncioModel.guardarDetalle(client, pilar, anuncioId, detalle);
         for (let i = 0; i < fotos.length; i++) {
             await anuncioModel.insertarFoto(client, anuncioId, fotos[i], i);
@@ -409,8 +450,8 @@ const crear = async ({ usuario, datos, archivos, idempotencyKey, base }) => {
     }
 
     // Una vacante nueva se avisa a quienes siguen al negocio. Va por detrás:
-    // la respuesta de publicar no espera a repartirla.
-    if (pilar === 'empleo') {
+    // la respuesta de publicar no espera a repartirla. Si espera revisión, no.
+    if (pilar === 'empleo' && estadoInicial === 'PUBLICADO') {
         notificacionModel
             .seguidoresPersonas(usuario.id)
             .then((seguidores) =>
@@ -605,7 +646,7 @@ const listarFeed = async ({ query, usuarioId, base }) => {
 
 const listarMios = async ({ usuarioId, query, base }) => {
     const estado = query.estado || null;
-    const estados = ['BORRADOR', 'PUBLICADO', 'PAUSADO', 'RECHAZADO'];
+    const estados = ['BORRADOR', 'PENDIENTE_REVISION', 'PUBLICADO', 'PAUSADO', 'RECHAZADO'];
     if (estado && !estados.includes(estado)) throw error("Parámetro 'estado' inválido", 400);
 
     const limite = limiteDePagina(query.limite);
@@ -661,7 +702,17 @@ const actualizar = async ({ id, usuarioId, datos, archivos, base }) => {
         detalle = validarDetalle(pilar, { ...detalleActual, ...(datos.detalle || {}) }, errores);
     }
 
-    if (datos.estado !== undefined) {
+    if (datos.estado !== undefined && datos.estado !== actual.estado) {
+        // Lo que decidió la moderación no lo deshace el dueño: ni sacar de
+        // revisión, ni reanudar una pausa puesta por un administrador.
+        if (actual.estado === 'PENDIENTE_REVISION') {
+            errores.estado = 'Tu anuncio está en revisión. Te avisaremos cuando se apruebe.';
+        } else if (actual.pausa_administrativa && datos.estado === 'PUBLICADO') {
+            errores.estado = 'Este anuncio fue pausado por moderación y no se puede reanudar.';
+        }
+    }
+
+    if (datos.estado !== undefined && !errores.estado) {
         const permitidos = { PUBLICADO: ['PAUSADO', 'BORRADOR'], PAUSADO: ['PUBLICADO'] };
         if (!permitidos[datos.estado]) {
             errores.estado = 'Solo puedes publicar o pausar el anuncio';
@@ -703,6 +754,44 @@ const actualizar = async ({ id, usuarioId, datos, archivos, base }) => {
 
     if (Object.keys(errores).length > 0) throw errorValidacion(errores);
 
+    // Cambios importantes (título, descripción o categoría) se vuelven a
+    // validar. Lo publicado puede volver a revisión, y un anuncio rechazado
+    // que se corrige se reenvía a revisión: nunca se publica solo.
+    let eventoModeracion = null;
+    const importante = ['titulo', 'descripcion', 'categoriaId'].some(
+        (c) => cambios[c] !== undefined && String(cambios[c] ?? '') !== String(actual[{ categoriaId: 'categoria_id' }[c] || c] ?? '')
+    );
+    if (importante && ['PUBLICADO', 'PAUSADO', 'RECHAZADO'].includes(actual.estado)) {
+        const autor = await usuarioModel.buscarPorId(usuarioId);
+        const moderacion = await moderacionService.evaluar({
+            titulo: cambios.titulo ?? actual.titulo,
+            descripcion: cambios.descripcion !== undefined ? cambios.descripcion : actual.descripcion,
+            categoriaId: cambios.categoriaId ?? actual.categoria_id,
+            autorCreadoEn: autor?.creado_en,
+        });
+        if (moderacion.decision === 'BLOQUEAR') {
+            moderacionModel
+                .registrarEvento({ anuncioId: actual.id, usuarioId, accion: 'BLOQUEADO', motivo: moderacion.motivos[0], detalle: { terminos: moderacion.terminos } })
+                .catch(() => undefined);
+            throw moderacionService.errorDeBloqueo(moderacion);
+        }
+        const reenviado = actual.estado === 'RECHAZADO';
+        if (reenviado || (moderacion.decision === 'REVISION' && actual.estado === 'PUBLICADO')) {
+            const motivos = reenviado ? ['REENVIADO', ...moderacion.motivos] : moderacion.motivos;
+            cambios.estado = 'PENDIENTE_REVISION';
+            cambios.motivoRevision = motivos.join(',');
+            eventoModeracion = {
+                anuncioId: actual.id,
+                usuarioId,
+                accion: reenviado ? 'REENVIADO' : 'ENVIADO_A_REVISION',
+                estadoAnterior: actual.estado,
+                estadoNuevo: 'PENDIENTE_REVISION',
+                motivo: motivos[0],
+                detalle: { motivos, terminos: moderacion.terminos },
+            };
+        }
+    }
+
     const nuevas = await procesarFotos(archivos);
     const aBorrar = fotosActuales.filter((f) => !conservar.includes(String(f.id)));
 
@@ -718,6 +807,7 @@ const actualizar = async ({ id, usuarioId, datos, archivos, base }) => {
         for (let i = 0; i < nuevas.length; i++) {
             await anuncioModel.insertarFoto(client, actual.id, nuevas[i], conservar.length + i);
         }
+        if (eventoModeracion) await moderacionModel.registrarEvento(eventoModeracion, client);
         await client.query('COMMIT');
     } catch (e) {
         await client.query('ROLLBACK').catch(() => {});
@@ -803,6 +893,16 @@ const quitarLike = async ({ id, usuarioId }) => {
     return anuncioModel.estadoLike(fila.id, usuarioId);
 };
 
+// ---------- Denuncias ----------
+
+// Cualquiera con sesión puede denunciar un anuncio público que no sea suyo.
+const denunciar = async ({ id, usuarioId, motivo, detalle }) => {
+    if (!/^\d+$/.test(String(id))) throw error('Anuncio no encontrado', 404);
+    const fila = await anuncioModel.buscarPorId(id);
+    if (!fila || !estaVisible(fila)) throw error('Anuncio no encontrado', 404);
+    return moderacionService.denunciar({ anuncio: fila, usuarioId, motivo, detalle });
+};
+
 // ---------- Guardados ----------
 
 // Guardar solo lo que se puede ver. Quitar, siempre (aunque ya se haya vendido).
@@ -866,6 +966,7 @@ const registrarVistas = async ({ ids, visitante, usuarioId }) => {
 };
 
 module.exports = {
+    denunciar,
     guardar,
     quitarGuardado,
     listarGuardados,

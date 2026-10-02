@@ -39,7 +39,8 @@ const buscarCanton = async (codigo, client) => {
 
 // Mismo predicado que el feed: publicados, vigentes y sin vender.
 const VISIBLE_FEED = `a.estado = 'PUBLICADO' AND a.eliminado_en IS NULL
-    AND (a.expira_en IS NULL OR a.expira_en > NOW()) AND NOT a.vendido`;
+    AND (a.expira_en IS NULL OR a.expira_en > NOW()) AND NOT a.vendido
+    AND EXISTS (SELECT 1 FROM usuarios ua WHERE ua.id = a.autor_usuario_id AND ua.estado = 'ACTIVO')`;
 
 // Cuántos anuncios visibles hay en cada categoría (para "Explorar" y el menú).
 const contarPorCategoria = async () => {

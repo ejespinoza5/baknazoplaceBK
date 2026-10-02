@@ -9,7 +9,7 @@ const SELECT_BASE = `
            asv.modalidad_cobro, asv.zona_cobertura,
            ae.jornada, ae.modalidad,
            u.nombres AS autor_nombres, u.apellidos AS autor_apellidos,
-           u.foto_perfil AS autor_foto, u.correo_verificado AS autor_verificado,
+           u.foto_perfil AS autor_foto, u.correo_verificado AS autor_verificado, u.estado AS autor_estado,
            -- Los teléfonos solo se usan para calcular telefonoVisible y en el reveal
            -- de contacto; los serializadores del servicio nunca los copian a la respuesta.
            u.telefono AS autor_telefono,
@@ -28,7 +28,10 @@ const SELECT_BASE = `
     LEFT JOIN anuncio_fotos f0 ON f0.anuncio_id = a.id AND f0.orden = 0`;
 
 // Lo que el público puede ver.
-const VISIBLE = `a.estado = 'PUBLICADO' AND a.eliminado_en IS NULL AND (a.expira_en IS NULL OR a.expira_en > NOW())`;
+// Lo público es solo lo PUBLICADO (nunca en revisión ni rechazado) y de
+// cuentas activas: suspender a alguien oculta todos sus anuncios.
+const VISIBLE = `a.estado = 'PUBLICADO' AND a.eliminado_en IS NULL AND (a.expira_en IS NULL OR a.expira_en > NOW())
+    AND EXISTS (SELECT 1 FROM usuarios ua WHERE ua.id = a.autor_usuario_id AND ua.estado = 'ACTIVO')`;
 
 // Distancia en km (haversine) entre el anuncio y el punto ($lat, $lng).
 const distanciaSql = (pLat, pLng) => `
@@ -45,10 +48,12 @@ const insertar = async (client, d) => {
         `INSERT INTO anuncios (
              slug, pilar, titulo, descripcion, categoria_id, provincia_codigo, canton_codigo, sector,
              precio, latitud, longitud, autor_usuario_id, autor_negocio_id, mostrar_telefono,
-             estado, publicado_en
+             estado, publicado_en, motivo_revision
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'PUBLICADO',
-                 date_trunc('milliseconds', NOW()))
+         -- La moderación decide: PUBLICADO sale ya; PENDIENTE_REVISION espera
+         -- a un administrador y no tiene fecha de publicación.
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+                 CASE WHEN $15 = 'PUBLICADO' THEN date_trunc('milliseconds', NOW()) END, $16)
          RETURNING id`,
         [
             d.slug,
@@ -65,6 +70,8 @@ const insertar = async (client, d) => {
             d.autorUsuarioId,
             d.autorNegocioId,
             d.mostrarTelefono,
+            d.estado || 'PUBLICADO',
+            d.motivoRevision ?? null,
         ]
     );
     return rows[0].id;
@@ -163,6 +170,8 @@ const COLUMNAS_EDITABLES = {
     vendido: 'vendido',
     // Lo pone el servicio junto con 'vendido', nunca el cliente.
     vendidoEn: 'vendido_en',
+    // Lo pone la moderación al volver a validar una edición, nunca el cliente.
+    motivoRevision: 'motivo_revision',
 };
 
 const actualizar = async (client, id, cambios) => {

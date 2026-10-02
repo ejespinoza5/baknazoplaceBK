@@ -10,6 +10,7 @@ const {
     limitadorLike,
     limitadorPostulacion,
     limitadorVistas,
+    limitadorDenuncia,
 } = require('../middlewares/rateLimiter');
 
 // Feed público. La sesión es opcional: sin token se ve igual, y con token el
@@ -48,6 +49,9 @@ router.delete('/:id/likes/me', requiereAutenticacion, limitadorLike, anuncioCont
 // Guardar para después. El usuario lo pone el token, igual que el like.
 router.post('/:id/guardado', requiereAutenticacion, limitadorLike, anuncioController.guardar);
 router.delete('/:id/guardado', requiereAutenticacion, limitadorLike, anuncioController.quitarGuardado);
+
+// Denunciar un anuncio { motivo, detalle }. Una vez por persona y anuncio.
+router.post('/:id/denuncias', requiereAutenticacion, limitadorDenuncia, anuncioController.denunciar);
 
 // Postularse a una vacante con el CV en PDF (campo 'cv' + 'mensaje' + 'telefono').
 router.post(

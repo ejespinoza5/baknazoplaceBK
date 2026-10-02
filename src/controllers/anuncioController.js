@@ -143,6 +143,15 @@ const quitarLike = async (req, res, next) => {
     }
 };
 
+const denunciar = async (req, res, next) => {
+    try {
+        const { motivo, detalle } = req.body || {};
+        res.status(201).json(await anuncioService.denunciar({ id: req.params.id, usuarioId: req.usuario.id, motivo, detalle }));
+    } catch (err) {
+        next(err);
+    }
+};
+
 const guardar = async (req, res, next) => {
     try {
         res.json(await anuncioService.guardar({ id: req.params.id, usuarioId: req.usuario.id }));
@@ -183,6 +192,7 @@ const registrarVistas = async (req, res, next) => {
 };
 
 module.exports = {
+    denunciar,
     crear,
     listar,
     listarMios,

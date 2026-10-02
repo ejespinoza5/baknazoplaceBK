@@ -14,6 +14,7 @@ const perfilRoutes = require('./routes/perfilRoutes');
 const postulacionRoutes = require('./routes/postulacionRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const notificacionRoutes = require('./routes/notificacionRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 const { adjuntarChat } = require('./realtime/chatSocket');
 const notificacionService = require('./services/notificacionService');
 const app = express();
@@ -62,6 +63,9 @@ app.use('/api/chat', chatRoutes);
 
 // Notificaciones: historial de la campana, preferencias y dispositivos push.
 app.use('/api/notificaciones', notificacionRoutes);
+
+// Panel de administración y moderación (sesión y permisos propios).
+app.use('/api/admin', adminRoutes);
 
 // Manejador de errores centralizado (nunca exponer detalles internos/stack al cliente)
 app.use((err, req, res, next) => {
