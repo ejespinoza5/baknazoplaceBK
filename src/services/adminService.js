@@ -6,6 +6,7 @@ const soporteModel = require('../models/soporteModel');
 const catalogoModel = require('../models/catalogoModel');
 const moderacionService = require('./moderacionService');
 const notificacionService = require('./notificacionService');
+const cacheService = require('./cacheService');
 const adminAuthService = require('./adminAuthService');
 const { generarContrasenaTemporal } = require('../utils/contrasenas');
 const { validarCorreo, normalizarCorreo } = require('../utils/validaciones');
@@ -215,6 +216,7 @@ const moderar = async ({ actor, id, accion, motivo, nota, ip }) => {
     const hecho = await moderacionModel.moderarAnuncio(Number(id), cambio, { ...evento, adminId: actor.id });
     if (!hecho) throw error('Anuncio no encontrado', 404);
     const cerradas = await moderacionModel.resolverDenuncias(id, denuncias, actor.id);
+    cacheService.anunciosCambiaron();
     // Una vacante que esperaba revisión y se publica por primera vez: ahora sí
     // se avisa a quienes siguen al negocio (al publicarla no se hizo).
     if (accion === 'aprobar' && actual.pilar === 'empleo' && actual.estado === 'PENDIENTE_REVISION' && !actual.publicado_en) {
@@ -243,6 +245,7 @@ const desestimarDenuncias = async ({ actor, anuncioId, ip }) => {
             adminId: actor.id,
         });
         restaurado = true;
+        cacheService.anunciosCambiaron();
     }
     await auditar(actor, 'denuncias.desestimar', 'anuncio', anuncioId, { titulo: actual.titulo, cerradas, restaurado }, ip);
     return { cerradas, restaurado };
@@ -279,6 +282,8 @@ const cambiarEstadoUsuario = async ({ actor, id, suspender, motivo, ip }) => {
     const destino = suspender ? 'SUSPENDIDO' : 'ACTIVO';
     if (u.estado === destino) throw error(suspender ? 'La cuenta ya está suspendida' : 'La cuenta ya está activa', 409);
     await moderacionModel.cambiarEstadoUsuario(id, destino);
+    // Suspender oculta (y reactivar devuelve) todos sus anuncios del feed.
+    cacheService.anunciosCambiaron();
     await auditar(actor, suspender ? 'usuario.suspender' : 'usuario.reactivar', 'usuario', id, { correo: u.correo, motivo: texto(motivo, 300) }, ip);
     return { id, estado: destino };
 };

@@ -158,10 +158,13 @@ const iniciarSesion = async (req, res, next) => {
 const refrescarToken = async (req, res, next) => {
     try {
         const refresh_token = leerRefreshToken(req);
-        // El frontend llama aquí al abrir la app para saber si hay sesión: sin
-        // cookie la respuesta es "no hay sesión", no un error de la petición.
+        // El frontend llama aquí al abrir la app para saber si hay sesión. Sin
+        // cookie es un visitante: "no hay sesión" no es un error, así que se
+        // responde 204 (antes 401, que el navegador pinta en rojo en la consola
+        // de cada visitante de la landing). El 401 queda para cookies inválidas.
         if (!refresh_token) {
-            return res.status(401).json({ error: 'No hay sesión iniciada' });
+            res.set('Cache-Control', 'no-store');
+            return res.status(204).end();
         }
         const resultado = await authService.refrescarToken({ refresh_token });
         responderConSesion(res, resultado, leerPersistente(req));

@@ -1,4 +1,5 @@
 const moderacionModel = require('../models/moderacionModel');
+const cacheService = require('./cacheService');
 const { MOTIVOS_DENUNCIA } = require('../config/administracion');
 
 // Moderación por reglas, sin IA ni servicios externos. Revisa el TEXTO del
@@ -169,6 +170,8 @@ const denunciar = async ({ anuncio, usuarioId, motivo, detalle }) => {
     const denunciantes = await moderacionModel.contarDenunciantesPendientes(anuncio.id);
     if (denunciantes >= config.umbral_denuncias) {
         await moderacionModel.enviarARevision(anuncio.id, 'DENUNCIAS', { denunciantes });
+        // Sale del feed hasta que lo revisen: la caché pública no debe mostrarlo.
+        cacheService.anunciosCambiaron();
     }
     return { denunciado: true };
 };

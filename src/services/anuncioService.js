@@ -6,6 +6,7 @@ const catalogoModel = require('../models/catalogoModel');
 const negocioModel = require('../models/negocioModel');
 const postulacionService = require('./postulacionService');
 const notificacionService = require('./notificacionService');
+const cacheService = require('./cacheService');
 const usuarioModel = require('../models/usuarioModel');
 const moderacionModel = require('../models/moderacionModel');
 const moderacionService = require('./moderacionService');
@@ -470,6 +471,8 @@ const crear = async ({ usuario, datos, archivos, idempotencyKey, base }) => {
     if (pilar === 'empleo' && estadoInicial === 'PUBLICADO') {
         notificacionService.avisarVacanteNueva({ negocioUsuarioId: usuario.id, anuncioId });
     }
+    // Lo nuevo debe verse ya en el feed público y en las cifras.
+    cacheService.anunciosCambiaron();
 
     return { repetido: false, ...respuestaCreacion(await cargarCompleto(anuncioId, base, true)) };
 };
@@ -838,6 +841,7 @@ const actualizar = async ({ id, usuarioId, datos, archivos, base }) => {
 
     // Los archivos de las fotos quitadas se borran solo después de confirmar la transacción.
     borrarArchivos(aBorrar.map((f) => f.storage_key));
+    cacheService.anunciosCambiaron();
 
     return cargarCompleto(actual.id, base, true);
 };
@@ -846,6 +850,7 @@ const actualizar = async ({ id, usuarioId, datos, archivos, base }) => {
 const eliminar = async ({ id, usuarioId }) => {
     await anuncioPropio(id, usuarioId);
     await anuncioModel.eliminarSoft(id);
+    cacheService.anunciosCambiaron();
 };
 
 // Reveal del teléfono: el único punto de la API que devuelve un número.

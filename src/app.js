@@ -6,6 +6,8 @@ const path = require('path');
 const helmet = require('helmet');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const compression = require('compression');
+require('./config/redis'); // Conecta a Redis si REDIS_URL está configurado (opcional).
 
 const authRoutes = require('./routes/authRoutes');
 const catalogoRoutes = require('./routes/catalogoRoutes');
@@ -25,6 +27,9 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(helmet());
+// Respuestas JSON comprimidas (gzip): el feed pesa varias veces menos y llega
+// antes con datos móviles. Las fotos ya vienen comprimidas y no se tocan.
+app.use(compression({ threshold: 1024 }));
 app.use(cors({
     origin: env.corsOrigin.length > 0 ? env.corsOrigin : false,
     // Permite que el navegador envíe y guarde la cookie del refresh token.
