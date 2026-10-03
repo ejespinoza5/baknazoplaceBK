@@ -612,7 +612,7 @@ const listarFeed = async ({ query, usuarioId, base }) => {
         // % y _ son comodines de LIKE: se escapan para buscarse como texto normal.
         .replace(/[\\%_]/g, '\\$&');
     if (orden === 'relevancia' && !q) throw error("El orden 'relevancia' requiere 'q'", 400);
-    const filas = await anuncioModel.feed({
+    const filtros = {
         pilar: query.pilar || null,
         categoriaId,
         cantonCodigo: query.canton || null,
@@ -631,25 +631,43 @@ const listarFeed = async ({ query, usuarioId, base }) => {
         orden,
         cursor: query.cursor ? decodificarCursor(query.cursor, orden) : null,
         limite,
-    });
+    };
 
-    const { filas: pagina, pagina: infoPagina } = paginar(filas, limite, orden);
-    const ids = pagina.map((f) => f.id);
-    const [conLike, guardados] = await Promise.all([
+    // La parte pesada (filtros, búsqueda, orden, fotos) es igual para todos:
+    // se guarda 30 s en la caché compartida y se invalida al publicar, editar o
+    // moderar. Lo de cada persona (me gusta, guardado, es mío) va aparte.
+    // Con ubicación no se guarda: cada punto sería una entrada distinta.
+    const calcular = async () => {
+        const filas = await anuncioModel.feed(filtros);
+        const { filas: pagina, pagina: infoPagina } = paginar(filas, limite, orden);
+        return { items: pagina.map((f) => aItemFeed(f, base, false)), pagina: infoPagina };
+    };
+    const comun =
+        lat === null
+            ? await cacheService.recordar('feed', `${base}|${JSON.stringify({ ...filtros, cursor: query.cursor || null })}`, 30, calcular)
+            : await calcular();
+
+    const ids = comun.items.map((i) => i.id);
+    const [conLike, guardados, likes] = await Promise.all([
         anuncioModel.idsConLike(usuarioId, ids),
         anuncioModel.idsGuardados(usuarioId, ids),
+        // El total de me gusta se lee siempre fresco (una consulta corta): así el
+        // número no se queda atrás del pulgar que la persona acaba de tocar.
+        anuncioModel.contarLikes(ids),
     ]);
     return {
         // El Feed lleva `esMio` para que la lista no le ofrezca al dueño un chat
         // con su propio anuncio. Sin sesión sale false, que es lo mismo que no
         // saberlo: en ese caso la lista tampoco tiene un botón de chat que
         // aparezca solo en tu caso.
-        items: pagina.map((f) => ({
-            ...aItemFeed(f, base, conLike.has(String(f.id))),
-            esMio: Boolean(usuarioId) && f.autor_usuario_id === usuarioId,
-            guardado: guardados.has(String(f.id)),
+        items: comun.items.map((i) => ({
+            ...i,
+            likes: likes.get(String(i.id)) ?? 0,
+            meGusta: conLike.has(String(i.id)),
+            esMio: Boolean(usuarioId) && i.autor.id === usuarioId,
+            guardado: guardados.has(String(i.id)),
         })),
-        pagina: infoPagina,
+        pagina: comun.pagina,
     };
 };
 

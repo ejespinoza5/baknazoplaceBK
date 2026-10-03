@@ -386,6 +386,18 @@ const idsConLike = async (usuarioId, anuncioIds) => {
     return new Set(rows.map((r) => String(r.anuncio_id)));
 };
 
+// Total de me gusta de cada anuncio de una página (id → total). Los que no
+// tienen ninguno no vienen.
+const contarLikes = async (anuncioIds) => {
+    if (anuncioIds.length === 0) return new Map();
+    const { rows } = await pool.query(
+        `SELECT anuncio_id, COUNT(*)::int AS total FROM anuncio_likes
+         WHERE anuncio_id = ANY($1::bigint[]) GROUP BY anuncio_id`,
+        [anuncioIds]
+    );
+    return new Map(rows.map((r) => [String(r.anuncio_id), r.total]));
+};
+
 // ---------- Guardados ----------
 
 // Idempotentes, igual que el like: guardar dos veces no duplica nada.
@@ -499,6 +511,7 @@ module.exports = {
     quitarLike,
     estadoLike,
     idsConLike,
+    contarLikes,
     guardar,
     quitarGuardado,
     idsGuardados,

@@ -75,8 +75,9 @@ const contadores = async ({ actor }) => {
 
 // ---------- Estadísticas ----------
 
+// Son conteos sobre tablas enteras: se calculan como mucho una vez por minuto.
 const estadisticas = async () => {
-    const e = await moderacionModel.estadisticas();
+    const e = await cacheService.recordar('admin', 'estadisticas', 60, () => moderacionModel.estadisticas());
     return {
         usuarios: e.usuarios,
         usuariosNuevos: e.usuarios_nuevos,

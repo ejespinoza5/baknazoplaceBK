@@ -1,5 +1,6 @@
 const perfilModel = require('../models/perfilModel');
 const notificacionService = require('./notificacionService');
+const cacheService = require('./cacheService');
 const { privacidadDe } = require('../utils/privacidad');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -91,6 +92,14 @@ const visibleParaVisitante = (f, visitanteId) => {
     return { privacidad, esDueno, ve };
 };
 
+// Los anuncios de un perfil (con sus fotos) son iguales para quien los mire:
+// se comparten 30 s en la caché y se invalidan junto con el feed. La cabecera
+// del perfil no se guarda: lleva "lo sigues" y la privacidad de quien mira.
+const anunciosDelPerfil = (usuarioId, pagina, ocultarVendidos, base) =>
+    cacheService.recordar('perfiles', `${base}|${usuarioId}|${JSON.stringify(pagina)}|${ocultarVendidos}`, 30, async () =>
+        (await perfilModel.listarAnunciosPublicos(usuarioId, pagina, ocultarVendidos)).map((a) => anuncioPublico(base, a))
+    );
+
 const obtenerPerfil = async ({ usuarioId, visitanteId, base, query }) => {
     validarId(usuarioId);
     const f = await perfilModel.obtenerPerfilPublico(usuarioId, visitanteId);
@@ -100,9 +109,7 @@ const obtenerPerfil = async ({ usuarioId, visitanteId, base, query }) => {
     const verVendidos = ve('vendidos');
 
     const pagina = paginacionDe(query);
-    const anuncios = (await perfilModel.listarAnunciosPublicos(usuarioId, pagina, !verVendidos)).map((a) =>
-        anuncioPublico(base, a)
-    );
+    const anuncios = await anunciosDelPerfil(usuarioId, pagina, !verVendidos, base);
     const esNegocio = f.tipo_cuenta === 'NEGOCIO';
 
     // El teléfono personal nunca es público: solo se exponen los datos de contacto del negocio,
@@ -168,9 +175,8 @@ const listarAnuncios = async ({ usuarioId, visitanteId, base, query }) => {
     if (!f) throw error('Usuario no encontrado', 404);
     const verVendidos = visibleParaVisitante(f, visitanteId).ve('vendidos');
     const pagina = paginacionDe(query);
-    const filas = await perfilModel.listarAnunciosPublicos(usuarioId, pagina, !verVendidos);
     return {
-        anuncios: filas.map((a) => anuncioPublico(base, a)),
+        anuncios: await anunciosDelPerfil(usuarioId, pagina, !verVendidos, base),
         paginacion: infoPagina(pagina, verVendidos ? f.publicados : f.disponibles),
     };
 };

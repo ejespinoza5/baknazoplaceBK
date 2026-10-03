@@ -1,7 +1,6 @@
 const crypto = require('crypto');
 const env = require('../config/env');
 const anuncioService = require('../services/anuncioService');
-const cacheService = require('../services/cacheService');
 const { parsearJson } = require('../utils/validaciones');
 
 // Quién está mirando, para contar una vista por persona. Con sesión, su id;
@@ -18,15 +17,6 @@ const visitanteDe = (req) =>
 
 // Base para armar URLs absolutas de las fotos (/uploads/...).
 const baseUrl = (req) => `${req.protocol}://${req.get('host')}`;
-
-// La misma consulta en otro orden es la misma página del feed: una sola clave.
-const claveConsulta = (base, query) =>
-    `${base}?${Object.keys(query)
-        .sort()
-        .filter((k) => typeof query[k] === 'string')
-        .map((k) => `${k}=${encodeURIComponent(query[k].slice(0, 120))}`)
-        .join('&')}`;
-
 // multipart/form-data: los datos llegan como JSON string en el campo 'datos'.
 // application/json (edición sin fotos): el cuerpo completo son los datos.
 const leerDatos = (req) => {
@@ -59,24 +49,16 @@ const crear = async (req, res, next) => {
 
 const listar = async (req, res, next) => {
     try {
-        const base = baseUrl(req);
-        const calcular = () =>
-            anuncioService.listarFeed({
-                query: req.query,
-                // Opcional a propósito: el feed se puede ver sin iniciar sesión, y
-                // quien sí lo está solo necesita que el Backend sepa cuáles de los
-                // anuncios son suyos para marcarlo.
-                usuarioId: req.usuario?.id || null,
-                base,
-            });
-        // Los visitantes sin sesión (la landing) ven todos lo mismo: se guarda
-        // 30 s y se invalida al publicar, editar o moderar. Con sesión no, porque
-        // la respuesta lleva "es mío" y "me gusta". Con ubicación tampoco: cada
-        // punto daría una entrada distinta y la caché no serviría de nada.
-        const cacheable = !req.usuario && req.query.lat === undefined && req.query.lng === undefined;
-        const resultado = cacheable
-            ? await cacheService.recordar('feed', claveConsulta(base, req.query), 30, calcular)
-            : await calcular();
+        // La caché va dentro del servicio: la parte común del feed se comparte
+        // entre todos y lo de cada persona se añade encima.
+        const resultado = await anuncioService.listarFeed({
+            query: req.query,
+            // Opcional a propósito: el feed se puede ver sin iniciar sesión, y
+            // quien sí lo está solo necesita que el Backend sepa cuáles de los
+            // anuncios son suyos para marcarlo.
+            usuarioId: req.usuario?.id || null,
+            base: baseUrl(req),
+        });
         res.json(resultado);
     } catch (err) {
         next(err);

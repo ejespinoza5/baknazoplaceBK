@@ -89,7 +89,7 @@ const invalidar = async (...espacios) => {
  * se vuelven a calcular en la siguiente visita.
  */
 const anunciosCambiaron = () => {
-    invalidar('feed', 'resumen').catch(() => undefined);
+    invalidar('feed', 'resumen', 'perfiles').catch(() => undefined);
 };
 
 module.exports = { recordar, invalidar, anunciosCambiaron };

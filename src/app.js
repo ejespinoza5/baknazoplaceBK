@@ -96,7 +96,8 @@ app.use((err, req, res, next) => {
             errores: err.errores,
         });
     }
-    console.error(err.stack || err.message);
+    // Los errores esperados (4xx: credenciales, validación…) no ensucian el log.
+    if (!err.status || err.status >= 500) console.error(err.stack || err.message);
     res.status(err.status || 500).json({ error: err.status ? err.message : 'Error interno' });
 });
 
