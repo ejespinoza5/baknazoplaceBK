@@ -1,0 +1,7 @@
+# Únicos paquetes a los que se les permite ejecutar scripts al instalarse.
+onlyBuiltDependencies:
+  - bcrypt
+  - sharp
+
+# No instalar versiones publicadas hace menos de 24 horas (1440 minutos).
+minimumReleaseAge: 1440
