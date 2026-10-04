@@ -12,6 +12,7 @@ const {
     limitadorVistas,
     limitadorDenuncia,
     limitadorRevisionTexto,
+    limitadorEdicion,
 } = require('../middlewares/rateLimiter');
 
 // Feed público. La sesión es opcional: sin token se ve igual, y con token el
@@ -39,7 +40,7 @@ router.post('/', requiereAutenticacion, limitadorPublicacion, uploadFotosAnuncio
 // Detalle por id o por slug. El dueño también ve sus anuncios pausados/rechazados.
 router.get('/:id', autenticacionOpcional, anuncioController.obtener);
 
-router.patch('/:id', requiereAutenticacion, uploadFotosAnuncio, anuncioController.actualizar);
+router.patch('/:id', requiereAutenticacion, limitadorEdicion, uploadFotosAnuncio, anuncioController.actualizar);
 router.delete('/:id', requiereAutenticacion, anuncioController.eliminar);
 
 // Reveal del teléfono del vendedor (y contador de contactos). Requiere sesión:

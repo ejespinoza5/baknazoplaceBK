@@ -15,13 +15,17 @@ const {
 
 router.get('/categorias', authController.listarCategorias);
 router.get('/politicas', authController.listarPoliticas);
+// Versiones nuevas que quien ya tiene cuenta aún no aceptó, y su aceptación.
+router.get('/politicas/pendientes', requiereAutenticacion, authController.politicasPendientes);
+router.post('/politicas/aceptar', requiereAutenticacion, authController.aceptarPoliticas);
 router.post('/correo-existe', limitadorCorreo, authController.correoExiste);
-router.post('/registro', uploadImagenes, limitadorRegistro, authController.registrar);
+// El limitador va antes de la subida: una IP que ya pasó su cupo no llega a escribir archivos.
+router.post('/registro', limitadorRegistro, uploadImagenes, authController.registrar);
 router.post('/verificar-correo', limitadorVerificacion, authController.verificarCorreo);
 router.post('/reenviar-verificacion', limitadorVerificacion, authController.reenviarVerificacion);
 
 router.post('/login', limitadorLogin, authController.iniciarSesion);
-router.post('/login/google', uploadImagenes, limitadorLogin, authController.loginGoogle);
+router.post('/login/google', limitadorLogin, uploadImagenes, authController.loginGoogle);
 router.post('/login/google/vincular', limitadorVerificacion, authController.vincularGoogle);
 router.post('/login/google/reenviar-codigo', limitadorVerificacion, authController.reenviarCodigoVinculacionGoogle);
 

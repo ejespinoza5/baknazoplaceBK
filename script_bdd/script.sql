@@ -366,6 +366,551 @@ La identificación de BAKNAZO y de su representante estará disponible en la inf
         TRUE)
 ON CONFLICT (clave, version) DO NOTHING;
 
+-- ============================================================
+-- Políticas versión 2 (3 de octubre de 2026)
+--
+-- Identifican al responsable y describen lo que la plataforma
+-- hace hoy (chat, teléfono, postulaciones, ubicación, push,
+-- moderación). La versión 1 NO se borra: es la prueba de lo que
+-- aceptaron los usuarios anteriores. Al entrar, a quien no ha
+-- aceptado la versión vigente se le pide aceptarla.
+--
+-- Se puede ejecutar sola sobre una base existente: primero se
+-- retira la vigencia de las anteriores (el índice único solo
+-- admite una vigente por clave) y luego entra la 2.
+-- El texto sale de un generador: si se cambia aquí, cambiar
+-- también public/privacidad.html y public/terminos.html.
+-- ============================================================
+
+BEGIN;
+
+UPDATE politicas SET vigente = FALSE WHERE vigente AND version < 2;
+
+INSERT INTO politicas (clave, version, titulo, contenido, vigente) VALUES
+    ('TERMINOS', 2, 'Términos y Condiciones de BAKNAZO',
+'TÉRMINOS Y CONDICIONES DE USO DE BAKNAZO
+Versión 2 · Fecha de entrada en vigencia: 3 de octubre de 2026
+
+Estos Términos y Condiciones regulan el uso de BAKNAZO, un sitio web para publicar y encontrar productos, servicios y empleo dentro del Ecuador. Léelos con calma: al crear tu cuenta o seguir usando la plataforma los aceptas.
+
+1. QUIÉN PRESTA EL SERVICIO
+
+BAKNAZO es un servicio prestado por:
+
+• Nombre: Edgar Josué Espinoza Zambrano (persona natural)
+• Cédula de identidad: 1755795216
+• Domicilio: Santo Domingo, provincia de Santo Domingo de los Tsáchilas, Ecuador
+• Correo electrónico: baknazoplace@gmail.com
+• Teléfono: 0989559412
+
+En estos términos, "BAKNAZO", "nosotros" o "el prestador" se refiere a esta persona.
+
+2. QUÉ ES BAKNAZO
+
+BAKNAZO es un punto de encuentro en línea. Permite a personas y negocios publicar anuncios de productos, servicios y vacantes de empleo, y a otras personas encontrarlos, guardarlos, escribir a quien los publicó y postularse a las vacantes.
+
+Publicar y usar BAKNAZO es gratuito. No cobramos comisión por las ventas ni por las contrataciones que se acuerden entre usuarios. Si en el futuro ofrecemos servicios de pago, lo informaremos antes y serán opcionales.
+
+BAKNAZO no vende, no compra, no contrata, no cobra ni entrega nada en nombre de los usuarios. Los acuerdos, pagos y entregas se hacen directamente entre ellos.
+
+3. ACEPTACIÓN Y VERSIONES
+
+Al crear tu cuenta confirmas que leíste y aceptas estos Términos y la Política de Privacidad vigentes. Guardamos qué versión aceptaste, la fecha, la dirección IP y el navegador desde el que lo hiciste, como prueba de tu consentimiento.
+
+Si publicamos una versión nueva, te la mostraremos al entrar y tendrás que aceptarla para seguir usando tu cuenta. Si no estás de acuerdo, puedes dejar de usar BAKNAZO y pedir que eliminemos tu cuenta.
+
+4. TU CUENTA
+
+• Debes ser mayor de 18 años. No permitimos cuentas de menores de edad.
+• Puedes registrarte con tu correo y una contraseña, o con tu cuenta de Google.
+• Puedes elegir una cuenta de Persona o de Negocio. Las cuentas de Negocio muestran los datos públicos de su negocio y pueden publicar vacantes.
+• Los datos que registras deben ser verdaderos y estar actualizados. No puedes hacerte pasar por otra persona o negocio.
+• Eres responsable de cuidar tu contraseña y de lo que se haga desde tu cuenta. Si sospechas que alguien más la usa, cámbiala y avísanos.
+• Una persona no debe crear varias cuentas para evadir una suspensión o los límites de la plataforma.
+
+5. QUÉ PUEDES PUBLICAR
+
+Cada anuncio debe ser real, estar disponible, describir con honestidad lo que se ofrece y tener un precio verdadero. Las fotos deben ser tuyas o debes tener permiso para usarlas.
+
+Está prohibido publicar, ofrecer o pedir:
+
+• Armas, municiones, explosivos y sus partes.
+• Drogas, sustancias controladas y medicamentos que requieren receta.
+• Animales silvestres o sus partes, y especies protegidas.
+• Documentos de identidad, títulos, placas, cuentas o datos personales de terceros.
+• Productos falsificados, robados, de contrabando o que infrinjan marcas o derechos de autor.
+• Contenido sexual, servicios sexuales o cualquier contenido que involucre a menores de edad.
+• Esquemas piramidales, apuestas no autorizadas, préstamos abusivos o cualquier forma de estafa.
+• Contenido ofensivo, violento, discriminatorio o que incite al odio.
+• Cualquier otro bien o servicio cuya venta esté prohibida por la ley ecuatoriana.
+
+Las vacantes de empleo deben ser reales y del negocio que las publica. No se puede cobrar dinero a quien se postula, ni pedirle datos que no sean necesarios para el proceso de selección, ni discriminarlo por motivos prohibidos por la Constitución y la ley.
+
+6. PERMISO SOBRE TU CONTENIDO
+
+Lo que publicas (textos, fotos y datos del anuncio o del negocio) sigue siendo tuyo. Al publicarlo nos das un permiso gratuito, no exclusivo y limitado al funcionamiento de la plataforma para guardarlo, mostrarlo, adaptarlo (por ejemplo, reducir o recortar las fotos) y difundirlo dentro de BAKNAZO y en los enlaces que tú o otros usuarios compartan.
+
+Este permiso termina cuando eliminas el contenido o tu cuenta, salvo por las copias que debamos conservar según la Política de Privacidad.
+
+7. CONTACTO ENTRE USUARIOS
+
+Ver el número de teléfono de quien publicó, escribirle por el chat y postularse a una vacante requieren una cuenta. El número solo se muestra si quien publicó activó esa opción, y cada consulta queda registrada y tiene un límite para evitar abusos.
+
+Los datos de contacto que obtengas en BAKNAZO solo puedes usarlos para la operación que te interesa. Está prohibido usarlos para enviar publicidad no solicitada, acosar, recolectarlos de forma masiva o compartirlos con terceros.
+
+Puedes bloquear a cualquier usuario en el chat. Te recomendamos reunirte en lugares públicos, revisar lo que compras antes de pagar y nunca enviar dinero por adelantado a quien no conoces.
+
+8. EMPLEO Y POSTULACIONES
+
+Cuando te postulas a una vacante, tu hoja de vida y tus respuestas se envían al negocio que la publicó. Desde ese momento ese negocio también es responsable de tratar esos datos conforme a la Ley Orgánica de Protección de Datos Personales, y solo puede usarlos para ese proceso de selección.
+
+Puedes retirar tu postulación cuando quieras. BAKNAZO no participa en la selección, no garantiza la contratación y no es parte de la relación laboral que se acuerde.
+
+9. MODERACIÓN, DENUNCIAS Y RECLAMOS
+
+Para mantener la plataforma segura, un filtro automático revisa los anuncios al publicarlos y al editarlos. Si detecta algo que podría estar prohibido, el anuncio queda "En revisión" y una persona del equipo decide si se publica. El filtro no rechaza ni elimina anuncios por sí solo.
+
+Cualquier usuario puede denunciar un anuncio. La denuncia es anónima para quien publicó y la revisa el equipo.
+
+Podemos pausar, rechazar o retirar anuncios que incumplan estos términos o la ley, y te diremos el motivo. Un anuncio rechazado se puede corregir y volver a enviar a revisión.
+
+Si no estás de acuerdo con una decisión, escríbenos por el chat de soporte de la plataforma o al correo de contacto. Una persona revisará tu caso y te responderá.
+
+10. SUSPENSIÓN Y CIERRE DE LA CUENTA
+
+Podemos limitar, suspender o cerrar una cuenta que incumpla estos términos o la ley, que ponga en riesgo a otros usuarios o que use la plataforma de forma fraudulenta. Salvo en casos graves o urgentes, te avisaremos y te explicaremos el motivo.
+
+Puedes dejar de usar BAKNAZO cuando quieras y pedir la eliminación de tu cuenta y de tus datos como se explica en la página "Eliminar mis datos" y en la Política de Privacidad.
+
+11. RESPONSABILIDADES
+
+BAKNAZO es un intermediario tecnológico. Quien publica es responsable de lo que ofrece: su existencia, calidad, estado, legalidad, precio, entrega y garantías. Quien compra o contrata es responsable de revisar lo que recibe y de cumplir lo que acuerda.
+
+Nosotros respondemos por el funcionamiento de la plataforma y por los daños que nos sean imputables conforme a la ley. No respondemos por los acuerdos, pagos o entregas entre usuarios, ni por la información falsa que un usuario publique, aunque actuaremos para retirarla cuando la conozcamos.
+
+Nada en estos términos limita los derechos que te reconoce la Ley Orgánica de Defensa del Consumidor.
+
+12. DISPONIBILIDAD DEL SERVICIO
+
+Procuramos que BAKNAZO esté disponible y funcione bien, pero puede tener interrupciones por mantenimiento, fallas técnicas o causas ajenas a nosotros. Cuando podamos, avisaremos con anticipación de los mantenimientos programados.
+
+13. PROPIEDAD INTELECTUAL DE BAKNAZO
+
+El nombre, el logotipo, el diseño y el software de BAKNAZO pertenecen a su titular. No puedes copiarlos, ni extraer de forma automatizada el contenido de la plataforma, ni usarla para crear un servicio que compita con ella sin autorización.
+
+14. LEY APLICABLE Y CONTROVERSIAS
+
+Estos términos se rigen por las leyes de la República del Ecuador.
+
+Si surge un problema, escríbenos primero: intentaremos resolverlo de forma directa. Si no se resuelve, las partes podrán acudir a mediación en un centro autorizado en Santo Domingo y, de no haber acuerdo, a los jueces competentes de Santo Domingo. Si usas BAKNAZO como consumidor, conservas tu derecho a presentar tu reclamo ante los jueces de tu domicilio o ante la autoridad de defensa del consumidor.
+
+15. CONTACTO
+
+Para cualquier consulta sobre estos términos escríbenos a baknazoplace@gmail.com o llama al 0989559412.
+',
+        TRUE),
+
+    ('PRIVACIDAD', 2, 'Política de Privacidad de BAKNAZO',
+'POLÍTICA DE PRIVACIDAD Y TRATAMIENTO DE DATOS PERSONALES DE BAKNAZO
+Versión 2 · Fecha de entrada en vigencia: 3 de octubre de 2026
+
+Esta política explica qué datos personales trata BAKNAZO, para qué, con quién se comparten, cuánto tiempo se guardan y cómo puedes ejercer tus derechos, conforme a la Ley Orgánica de Protección de Datos Personales del Ecuador (LOPDP), su Reglamento y demás normativa aplicable.
+
+1. RESPONSABLE DEL TRATAMIENTO
+
+El responsable de tus datos personales es:
+
+• Nombre: Edgar Josué Espinoza Zambrano (persona natural)
+• Cédula de identidad: 1755795216
+• Domicilio: Santo Domingo, provincia de Santo Domingo de los Tsáchilas, Ecuador
+• Correo electrónico: baknazoplace@gmail.com
+• Teléfono: 0989559412
+
+Para cualquier asunto sobre tus datos, escribe al correo indicado.
+
+2. DATOS QUE TRATAMOS
+
+• Datos de tu cuenta: nombres, apellidos, correo electrónico, contraseña (guardada cifrada, nunca en texto legible), tipo de cuenta (Persona o Negocio) y la confirmación de que eres mayor de edad. Si entras con Google, recibimos de Google tu nombre, apellidos y correo; nunca tu contraseña de Google.
+• Datos de tu perfil: foto, portada y teléfono, si los agregas, y si decides mostrar tu número.
+• Datos de tu negocio, si tienes cuenta de Negocio: nombre comercial, categoría, logo, dirección, ubicación, horarios, redes sociales y los teléfonos, WhatsApp y correo de contacto que decidas publicar.
+• Tus anuncios: títulos, descripciones, precios, fotos, categoría, cantón y una ubicación aproximada.
+• Tus mensajes: las conversaciones del chat con otros usuarios y con el equipo de soporte.
+• Tus postulaciones: la hoja de vida en PDF que subes, las respuestas al cuestionario de la vacante y el estado de cada postulación.
+• Tu actividad: anuncios guardados, me gusta, perfiles que sigues, denuncias que envías, consultas de números de teléfono y notificaciones.
+• Tu ubicación, solo si das permiso en el navegador: la usamos redondeada a unos 1,1 km para mostrarte lo que está cerca o para ubicar tu anuncio. Nunca usamos tu ubicación exacta.
+• Datos técnicos: dirección IP, tipo de navegador y dispositivo, fechas de acceso, y el identificador de notificaciones push si las activas.
+• Visitas a anuncios sin cuenta: para contar visitas sin duplicarlas generamos un código cifrado a partir de la IP y el navegador. No guardamos la IP para esto y el código no permite identificarte.
+
+3. DATOS SENSIBLES
+
+No te pedimos datos sensibles (salud, religión, orientación sexual, afiliación política, datos biométricos u otros que la ley considere sensibles). Te recomendamos no incluirlos en tus anuncios, mensajes ni en tu hoja de vida. Si decides incluirlos en tu hoja de vida, lo haces de forma voluntaria y solo para que el negocio los considere en su proceso de selección.
+
+4. PARA QUÉ USAMOS TUS DATOS Y CON QUÉ BASE LEGAL
+
+• Crear y mantener tu cuenta, iniciar tu sesión y darte las funciones de la plataforma: para cumplir el contrato que aceptas con los Términos y Condiciones.
+• Mostrar tus anuncios y tu perfil público, permitir que otros te escriban, que vean tu número si lo activas y que se postulen a tus vacantes: para cumplir ese mismo contrato.
+• Enviar tu postulación al negocio que publicó la vacante: para cumplir el contrato, cuando tú decides postularte.
+• Usar tu ubicación y enviarte notificaciones push: con tu consentimiento, que das al activarlas y puedes retirar cuando quieras desde tu navegador o tu cuenta.
+• Enviarte correos de verificación, de recuperación de contraseña y avisos sobre tu cuenta: para cumplir el contrato.
+• Revisar anuncios, atender denuncias, limitar intentos y prevenir fraudes, abusos y ataques: por nuestro interés legítimo en mantener la plataforma segura, y para cumplir obligaciones legales.
+• Atender tus solicitudes, reclamos y consultas de soporte: para cumplir el contrato y nuestras obligaciones legales.
+• Elaborar estadísticas generales (por ejemplo, cuántos anuncios se publican por día) que no te identifican: por nuestro interés legítimo en mejorar el servicio.
+
+No usamos tus datos para publicidad de terceros, no vendemos tus datos y no elaboramos perfiles para decisiones que te afecten legalmente.
+
+5. QUÉ VEN LOS DEMÁS
+
+• Cualquier persona, incluso sin cuenta: tus anuncios publicados, tu nombre o el de tu negocio, tu foto, tu portada, los datos públicos de tu negocio, los perfiles que sigues y quiénes te siguen, y el número de me gusta y visitas de tus anuncios.
+• Usuarios con cuenta: además, tu número de teléfono, solo si activaste la opción de mostrarlo.
+• Las personas con las que chateas: tus mensajes en esa conversación.
+• El negocio al que te postulas: tu hoja de vida, tus respuestas y tus datos de contacto.
+• El equipo de BAKNAZO: lo necesario para moderar, atender denuncias y dar soporte. El equipo no lee tus conversaciones privadas salvo cuando es necesario para atender una denuncia, una solicitud tuya o un requerimiento de una autoridad. Cada acción del equipo de moderación queda registrada.
+
+6. DECISIONES AUTOMATIZADAS
+
+Un filtro automático revisa el texto de los anuncios al publicarlos o editarlos. Si encuentra algo que podría estar prohibido, el anuncio queda "En revisión" hasta que una persona lo revise. El filtro no rechaza anuncios ni suspende cuentas por sí solo: esas decisiones siempre las toma una persona. Tienes derecho a pedir que una persona revise cualquier decisión que te afecte y a explicar tu punto de vista.
+
+También aplicamos límites automáticos de cantidad de intentos (por ejemplo, de inicio de sesión) para proteger las cuentas. Solo retrasan las acciones durante unos minutos.
+
+7. CON QUIÉN COMPARTIMOS TUS DATOS
+
+Solo compartimos tus datos cuando es necesario para que BAKNAZO funcione:
+
+• Proveedores de alojamiento de servidores y bases de datos, donde se guarda la información de la plataforma.
+• Google: para el inicio de sesión con Google (si lo eliges), para entregar las notificaciones push mediante Firebase Cloud Messaging (si las activas) y para cargar las tipografías del sitio (Google Fonts), lo que hace que tu navegador se conecte a servidores de Google.
+• El proveedor del servicio de correo electrónico con el que enviamos los códigos y avisos.
+• Otros usuarios, en los casos descritos en "Qué ven los demás".
+• Autoridades competentes, cuando la ley o una orden judicial lo exijan.
+
+Los proveedores tratan los datos por encargo nuestro, solo para prestarnos su servicio y con medidas de seguridad adecuadas.
+
+8. TRANSFERENCIAS INTERNACIONALES
+
+Algunos de estos proveedores, como Google, tienen sus servidores fuera del Ecuador, por ejemplo en Estados Unidos. Por eso algunos de tus datos pueden ser tratados en otros países. Elegimos proveedores que ofrecen garantías de protección de datos acordes con la LOPDP, como cláusulas contractuales y medidas de seguridad reconocidas.
+
+9. CUÁNTO TIEMPO GUARDAMOS TUS DATOS
+
+• Tu cuenta, tu perfil y tu negocio: mientras tu cuenta esté activa.
+• Tus anuncios: mientras los mantengas. Los que eliminas dejan de mostrarse de inmediato y se borran definitivamente al eliminar tu cuenta.
+• Tus mensajes del chat: mientras exista la conversación en las cuentas de quienes la tienen. Al eliminar tu cuenta se borran tus mensajes.
+• Tus postulaciones y hojas de vida: hasta que retires la postulación o elimines tu cuenta. El negocio que la recibió debe conservarlas solo durante su proceso de selección.
+• Las notificaciones leídas: se borran automáticamente a los 180 días.
+• Tu sesión: hasta 30 días si eliges mantenerla iniciada; al cerrar sesión se invalida.
+• El identificador de notificaciones push: hasta que las desactives, cierres sesión o deje de ser válido.
+• El registro de que aceptaste los términos y esta política, los registros de moderación y las denuncias: el tiempo necesario para atender reclamos o requerimientos de autoridades y el que exija la ley, sin usarlos para nada más.
+
+Cuando pidas eliminar tu cuenta, borraremos tus datos en un plazo máximo de 15 días, salvo lo que debamos conservar según el punto anterior.
+
+10. TUS DERECHOS
+
+Según la LOPDP tienes derecho a:
+
+• Acceder a tus datos y saber cómo los tratamos.
+• Rectificarlos y actualizarlos si son incorrectos o están incompletos. Muchos los puedes cambiar tú mismo desde la configuración de tu cuenta.
+• Eliminarlos.
+• Oponerte a un tratamiento o pedir que se suspenda.
+• Pedir la portabilidad, es decir, recibir tus datos en un formato estructurado y de uso común.
+• No ser objeto de decisiones basadas únicamente en tratamientos automatizados y pedir la revisión de una persona.
+• Retirar tu consentimiento en cualquier momento, sin que eso afecte lo hecho antes de retirarlo.
+
+Para ejercerlos escribe a baknazoplace@gmail.com desde el correo de tu cuenta, indicando qué derecho quieres ejercer. Es gratis. Podemos pedirte que confirmes que eres el titular de la cuenta, pero nunca te pediremos tu contraseña. Te responderemos en un plazo máximo de 15 días.
+
+Si consideras que no atendimos bien tu solicitud o que tratamos tus datos de forma indebida, puedes presentar un reclamo ante la Superintendencia de Protección de Datos Personales del Ecuador.
+
+11. COOKIES Y ALMACENAMIENTO EN TU NAVEGADOR
+
+BAKNAZO no usa cookies de publicidad ni herramientas de rastreo de terceros. Solo usamos:
+
+• Una cookie necesaria y protegida (HttpOnly) que mantiene tu sesión iniciada. Sin ella no se puede entrar a tu cuenta.
+• El almacenamiento de tu navegador (sessionStorage y localStorage) para recordar, por ejemplo, el borrador del anuncio que estás escribiendo, tu ubicación durante la visita o tus preferencias de la aplicación. Estos datos se quedan en tu dispositivo.
+
+12. MENORES DE EDAD
+
+BAKNAZO es solo para mayores de 18 años y no recopilamos a sabiendas datos de menores. Si detectamos una cuenta de un menor de edad, la cerraremos y eliminaremos sus datos.
+
+13. SEGURIDAD
+
+Protegemos tus datos con medidas técnicas y organizativas: contraseñas cifradas, conexiones cifradas mediante HTTPS, límites de intentos, acceso restringido al panel de administración con permisos por persona y registro de las acciones del equipo.
+
+Ningún sistema es infalible. Si ocurre una vulneración de seguridad que afecte tus datos, la notificaremos a la Superintendencia de Protección de Datos Personales y a las personas afectadas en los plazos que establece la ley.
+
+14. CAMBIOS A ESTA POLÍTICA
+
+Si cambiamos esta política publicaremos la nueva versión con su número y fecha. Si los cambios son importantes, te la mostraremos al entrar a tu cuenta y te pediremos que la aceptes.
+',
+        TRUE)
+ON CONFLICT (clave, version) DO NOTHING;
+
+COMMIT;
+
+-- ============================================================
+-- Políticas versión 3 (3 de octubre de 2026)
+--
+-- Mismo contenido que la versión 2, con el responsable al final
+-- y solo con lo necesario (nombre, ciudad y correo). Va como
+-- versión nueva y no como edición de la 2: quien ya aceptó la 2
+-- tiene que poder demostrar qué texto aceptó.
+--
+-- Se puede ejecutar sola sobre una base existente. El texto sale
+-- de un generador: si se cambia aquí, cambiar también
+-- public/privacidad.html y public/terminos.html.
+-- ============================================================
+
+BEGIN;
+
+UPDATE politicas SET vigente = FALSE WHERE vigente AND version < 3;
+
+INSERT INTO politicas (clave, version, titulo, contenido, vigente) VALUES
+    ('TERMINOS', 3, 'Términos y Condiciones de BAKNAZO',
+'TÉRMINOS Y CONDICIONES DE USO DE BAKNAZO
+Fecha de entrada en vigencia: 3 de octubre de 2026
+
+Estos Términos y Condiciones regulan el uso de BAKNAZO, un sitio web para publicar y encontrar productos, servicios y empleo dentro del Ecuador. Léelos con calma: al crear tu cuenta o seguir usando la plataforma los aceptas.
+
+1. QUÉ ES BAKNAZO
+
+BAKNAZO es un punto de encuentro en línea. Permite a personas y negocios publicar anuncios de productos, servicios y vacantes de empleo, y a otras personas encontrarlos, guardarlos, escribir a quien los publicó y postularse a las vacantes.
+
+Publicar y usar BAKNAZO es gratuito. No cobramos comisión por las ventas ni por las contrataciones que se acuerden entre usuarios. Si en el futuro ofrecemos servicios de pago, lo informaremos antes y serán opcionales.
+
+BAKNAZO no vende, no compra, no contrata, no cobra ni entrega nada en nombre de los usuarios. Los acuerdos, pagos y entregas se hacen directamente entre ellos.
+
+2. ACEPTACIÓN Y VERSIONES
+
+Al crear tu cuenta confirmas que leíste y aceptas estos Términos y la Política de Privacidad vigentes. Guardamos qué versión aceptaste, la fecha, la dirección IP y el navegador desde el que lo hiciste, como prueba de tu consentimiento.
+
+Si publicamos una versión nueva, te la mostraremos al entrar y tendrás que aceptarla para seguir usando tu cuenta. Si no estás de acuerdo, puedes dejar de usar BAKNAZO y pedir que eliminemos tu cuenta.
+
+3. TU CUENTA
+
+• Debes ser mayor de 18 años. No permitimos cuentas de menores de edad.
+• Puedes registrarte con tu correo y una contraseña, o con tu cuenta de Google.
+• Puedes elegir una cuenta de Persona o de Negocio. Las cuentas de Negocio muestran los datos públicos de su negocio y pueden publicar vacantes.
+• Los datos que registras deben ser verdaderos y estar actualizados. No puedes hacerte pasar por otra persona o negocio.
+• Eres responsable de cuidar tu contraseña y de lo que se haga desde tu cuenta. Si sospechas que alguien más la usa, cámbiala y avísanos.
+• Una persona no debe crear varias cuentas para evadir una suspensión o los límites de la plataforma.
+
+4. QUÉ PUEDES PUBLICAR
+
+Cada anuncio debe ser real, estar disponible, describir con honestidad lo que se ofrece y tener un precio verdadero. Las fotos deben ser tuyas o debes tener permiso para usarlas.
+
+Está prohibido publicar, ofrecer o pedir:
+
+• Armas, municiones, explosivos y sus partes.
+• Drogas, sustancias controladas y medicamentos que requieren receta.
+• Animales silvestres o sus partes, y especies protegidas.
+• Documentos de identidad, títulos, placas, cuentas o datos personales de terceros.
+• Productos falsificados, robados, de contrabando o que infrinjan marcas o derechos de autor.
+• Contenido sexual, servicios sexuales o cualquier contenido que involucre a menores de edad.
+• Esquemas piramidales, apuestas no autorizadas, préstamos abusivos o cualquier forma de estafa.
+• Contenido ofensivo, violento, discriminatorio o que incite al odio.
+• Cualquier otro bien o servicio cuya venta esté prohibida por la ley ecuatoriana.
+
+Las vacantes de empleo deben ser reales y del negocio que las publica. No se puede cobrar dinero a quien se postula, ni pedirle datos que no sean necesarios para el proceso de selección, ni discriminarlo por motivos prohibidos por la Constitución y la ley.
+
+5. PERMISO SOBRE TU CONTENIDO
+
+Lo que publicas (textos, fotos y datos del anuncio o del negocio) sigue siendo tuyo. Al publicarlo nos das un permiso gratuito, no exclusivo y limitado al funcionamiento de la plataforma para guardarlo, mostrarlo, adaptarlo (por ejemplo, reducir o recortar las fotos) y difundirlo dentro de BAKNAZO y en los enlaces que tú o otros usuarios compartan.
+
+Este permiso termina cuando eliminas el contenido o tu cuenta, salvo por las copias que debamos conservar según la Política de Privacidad.
+
+6. CONTACTO ENTRE USUARIOS
+
+Ver el número de teléfono de quien publicó, escribirle por el chat y postularse a una vacante requieren una cuenta. El número solo se muestra si quien publicó activó esa opción, y cada consulta queda registrada y tiene un límite para evitar abusos.
+
+Los datos de contacto que obtengas en BAKNAZO solo puedes usarlos para la operación que te interesa. Está prohibido usarlos para enviar publicidad no solicitada, acosar, recolectarlos de forma masiva o compartirlos con terceros.
+
+Puedes bloquear a cualquier usuario en el chat. Te recomendamos reunirte en lugares públicos, revisar lo que compras antes de pagar y nunca enviar dinero por adelantado a quien no conoces.
+
+7. EMPLEO Y POSTULACIONES
+
+Cuando te postulas a una vacante, tu hoja de vida y tus respuestas se envían al negocio que la publicó. Desde ese momento ese negocio también es responsable de tratar esos datos conforme a la Ley Orgánica de Protección de Datos Personales, y solo puede usarlos para ese proceso de selección.
+
+Puedes retirar tu postulación cuando quieras. BAKNAZO no participa en la selección, no garantiza la contratación y no es parte de la relación laboral que se acuerde.
+
+8. MODERACIÓN, DENUNCIAS Y RECLAMOS
+
+Para mantener la plataforma segura, un filtro automático revisa los anuncios al publicarlos y al editarlos. Si detecta algo que podría estar prohibido, el anuncio queda "En revisión" y una persona del equipo decide si se publica. El filtro no rechaza ni elimina anuncios por sí solo.
+
+Cualquier usuario puede denunciar un anuncio. La denuncia es anónima para quien publicó y la revisa el equipo.
+
+Podemos pausar, rechazar o retirar anuncios que incumplan estos términos o la ley, y te diremos el motivo. Un anuncio rechazado se puede corregir y volver a enviar a revisión.
+
+Si no estás de acuerdo con una decisión, escríbenos por el chat de soporte de la plataforma o al correo de contacto. Una persona revisará tu caso y te responderá.
+
+9. SUSPENSIÓN Y CIERRE DE LA CUENTA
+
+Podemos limitar, suspender o cerrar una cuenta que incumpla estos términos o la ley, que ponga en riesgo a otros usuarios o que use la plataforma de forma fraudulenta. Salvo en casos graves o urgentes, te avisaremos y te explicaremos el motivo.
+
+Puedes dejar de usar BAKNAZO cuando quieras y pedir la eliminación de tu cuenta y de tus datos como se explica en la página "Eliminar mis datos" y en la Política de Privacidad.
+
+10. RESPONSABILIDADES
+
+BAKNAZO es un intermediario tecnológico. Quien publica es responsable de lo que ofrece: su existencia, calidad, estado, legalidad, precio, entrega y garantías. Quien compra o contrata es responsable de revisar lo que recibe y de cumplir lo que acuerda.
+
+Nosotros respondemos por el funcionamiento de la plataforma y por los daños que nos sean imputables conforme a la ley. No respondemos por los acuerdos, pagos o entregas entre usuarios, ni por la información falsa que un usuario publique, aunque actuaremos para retirarla cuando la conozcamos.
+
+Nada en estos términos limita los derechos que te reconoce la Ley Orgánica de Defensa del Consumidor.
+
+11. DISPONIBILIDAD DEL SERVICIO
+
+Procuramos que BAKNAZO esté disponible y funcione bien, pero puede tener interrupciones por mantenimiento, fallas técnicas o causas ajenas a nosotros. Cuando podamos, avisaremos con anticipación de los mantenimientos programados.
+
+12. PROPIEDAD INTELECTUAL DE BAKNAZO
+
+El nombre, el logotipo, el diseño y el software de BAKNAZO pertenecen a su titular. No puedes copiarlos, ni extraer de forma automatizada el contenido de la plataforma, ni usarla para crear un servicio que compita con ella sin autorización.
+
+13. LEY APLICABLE Y CONTROVERSIAS
+
+Estos términos se rigen por las leyes de la República del Ecuador.
+
+Si surge un problema, escríbenos primero: intentaremos resolverlo de forma directa. Si no se resuelve, las partes podrán acudir a mediación en un centro autorizado en Santo Domingo y, de no haber acuerdo, a los jueces competentes de Santo Domingo. Si usas BAKNAZO como consumidor, conservas tu derecho a presentar tu reclamo ante los jueces de tu domicilio o ante la autoridad de defensa del consumidor.
+
+14. RESPONSABLE Y CONTACTO
+
+BAKNAZO es operado por Edgar J. Espinoza Z. (persona natural), con domicilio en Santo Domingo, Ecuador.
+
+En estos términos, "BAKNAZO", "nosotros" o "el prestador" se refiere a quien opera la plataforma.
+
+Para cualquier consulta sobre estos términos escríbenos a baknazoplace@gmail.com.
+',
+        TRUE),
+
+    ('PRIVACIDAD', 3, 'Política de Privacidad de BAKNAZO',
+'POLÍTICA DE PRIVACIDAD Y TRATAMIENTO DE DATOS PERSONALES DE BAKNAZO
+Fecha de entrada en vigencia: 3 de octubre de 2026
+
+Esta política explica qué datos personales trata BAKNAZO, para qué, con quién se comparten, cuánto tiempo se guardan y cómo puedes ejercer tus derechos, conforme a la Ley Orgánica de Protección de Datos Personales del Ecuador (LOPDP), su Reglamento y demás normativa aplicable.
+
+1. DATOS QUE TRATAMOS
+
+• Datos de tu cuenta: nombres, apellidos, correo electrónico, contraseña (guardada cifrada, nunca en texto legible), tipo de cuenta (Persona o Negocio) y la confirmación de que eres mayor de edad. Si entras con Google, recibimos de Google tu nombre, apellidos y correo; nunca tu contraseña de Google.
+• Datos de tu perfil: foto, portada y teléfono, si los agregas, y si decides mostrar tu número.
+• Datos de tu negocio, si tienes cuenta de Negocio: nombre comercial, categoría, logo, dirección, ubicación, horarios, redes sociales y los teléfonos, WhatsApp y correo de contacto que decidas publicar.
+• Tus anuncios: títulos, descripciones, precios, fotos, categoría, cantón y una ubicación aproximada.
+• Tus mensajes: las conversaciones del chat con otros usuarios y con el equipo de soporte.
+• Tus postulaciones: la hoja de vida en PDF que subes, las respuestas al cuestionario de la vacante y el estado de cada postulación.
+• Tu actividad: anuncios guardados, me gusta, perfiles que sigues, denuncias que envías, consultas de números de teléfono y notificaciones.
+• Tu ubicación, solo si das permiso en el navegador: la usamos redondeada a unos 1,1 km para mostrarte lo que está cerca o para ubicar tu anuncio. Nunca usamos tu ubicación exacta.
+• Datos técnicos: dirección IP, tipo de navegador y dispositivo, fechas de acceso, y el identificador de notificaciones push si las activas.
+• Visitas a anuncios sin cuenta: para contar visitas sin duplicarlas generamos un código cifrado a partir de la IP y el navegador. No guardamos la IP para esto y el código no permite identificarte.
+
+2. DATOS SENSIBLES
+
+No te pedimos datos sensibles (salud, religión, orientación sexual, afiliación política, datos biométricos u otros que la ley considere sensibles). Te recomendamos no incluirlos en tus anuncios, mensajes ni en tu hoja de vida. Si decides incluirlos en tu hoja de vida, lo haces de forma voluntaria y solo para que el negocio los considere en su proceso de selección.
+
+3. PARA QUÉ USAMOS TUS DATOS Y CON QUÉ BASE LEGAL
+
+• Crear y mantener tu cuenta, iniciar tu sesión y darte las funciones de la plataforma: para cumplir el contrato que aceptas con los Términos y Condiciones.
+• Mostrar tus anuncios y tu perfil público, permitir que otros te escriban, que vean tu número si lo activas y que se postulen a tus vacantes: para cumplir ese mismo contrato.
+• Enviar tu postulación al negocio que publicó la vacante: para cumplir el contrato, cuando tú decides postularte.
+• Usar tu ubicación y enviarte notificaciones push: con tu consentimiento, que das al activarlas y puedes retirar cuando quieras desde tu navegador o tu cuenta.
+• Enviarte correos de verificación, de recuperación de contraseña y avisos sobre tu cuenta: para cumplir el contrato.
+• Revisar anuncios, atender denuncias, limitar intentos y prevenir fraudes, abusos y ataques: por nuestro interés legítimo en mantener la plataforma segura, y para cumplir obligaciones legales.
+• Atender tus solicitudes, reclamos y consultas de soporte: para cumplir el contrato y nuestras obligaciones legales.
+• Elaborar estadísticas generales (por ejemplo, cuántos anuncios se publican por día) que no te identifican: por nuestro interés legítimo en mejorar el servicio.
+
+No usamos tus datos para publicidad de terceros, no vendemos tus datos y no elaboramos perfiles para decisiones que te afecten legalmente.
+
+4. QUÉ VEN LOS DEMÁS
+
+• Cualquier persona, incluso sin cuenta: tus anuncios publicados, tu nombre o el de tu negocio, tu foto, tu portada, los datos públicos de tu negocio, los perfiles que sigues y quiénes te siguen, y el número de me gusta y visitas de tus anuncios.
+• Usuarios con cuenta: además, tu número de teléfono, solo si activaste la opción de mostrarlo.
+• Las personas con las que chateas: tus mensajes en esa conversación.
+• El negocio al que te postulas: tu hoja de vida, tus respuestas y tus datos de contacto.
+• El equipo de BAKNAZO: lo necesario para moderar, atender denuncias y dar soporte. El equipo no lee tus conversaciones privadas salvo cuando es necesario para atender una denuncia, una solicitud tuya o un requerimiento de una autoridad. Cada acción del equipo de moderación queda registrada.
+
+5. DECISIONES AUTOMATIZADAS
+
+Un filtro automático revisa el texto de los anuncios al publicarlos o editarlos. Si encuentra algo que podría estar prohibido, el anuncio queda "En revisión" hasta que una persona lo revise. El filtro no rechaza anuncios ni suspende cuentas por sí solo: esas decisiones siempre las toma una persona. Tienes derecho a pedir que una persona revise cualquier decisión que te afecte y a explicar tu punto de vista.
+
+También aplicamos límites automáticos de cantidad de intentos (por ejemplo, de inicio de sesión) para proteger las cuentas. Solo retrasan las acciones durante unos minutos.
+
+6. CON QUIÉN COMPARTIMOS TUS DATOS
+
+Solo compartimos tus datos cuando es necesario para que BAKNAZO funcione:
+
+• Proveedores de alojamiento de servidores y bases de datos, donde se guarda la información de la plataforma.
+• Google: para el inicio de sesión con Google (si lo eliges), para entregar las notificaciones push mediante Firebase Cloud Messaging (si las activas) y para cargar las tipografías del sitio (Google Fonts), lo que hace que tu navegador se conecte a servidores de Google.
+• El proveedor del servicio de correo electrónico con el que enviamos los códigos y avisos.
+• Otros usuarios, en los casos descritos en "Qué ven los demás".
+• Autoridades competentes, cuando la ley o una orden judicial lo exijan.
+
+Los proveedores tratan los datos por encargo nuestro, solo para prestarnos su servicio y con medidas de seguridad adecuadas.
+
+7. TRANSFERENCIAS INTERNACIONALES
+
+Algunos de estos proveedores, como Google, tienen sus servidores fuera del Ecuador, por ejemplo en Estados Unidos. Por eso algunos de tus datos pueden ser tratados en otros países. Elegimos proveedores que ofrecen garantías de protección de datos acordes con la LOPDP, como cláusulas contractuales y medidas de seguridad reconocidas.
+
+8. CUÁNTO TIEMPO GUARDAMOS TUS DATOS
+
+• Tu cuenta, tu perfil y tu negocio: mientras tu cuenta esté activa.
+• Tus anuncios: mientras los mantengas. Los que eliminas dejan de mostrarse de inmediato y se borran definitivamente al eliminar tu cuenta.
+• Tus mensajes del chat: mientras exista la conversación en las cuentas de quienes la tienen. Al eliminar tu cuenta se borran tus mensajes.
+• Tus postulaciones y hojas de vida: hasta que retires la postulación o elimines tu cuenta. El negocio que la recibió debe conservarlas solo durante su proceso de selección.
+• Las notificaciones leídas: se borran automáticamente a los 180 días.
+• Tu sesión: hasta 30 días si eliges mantenerla iniciada; al cerrar sesión se invalida.
+• El identificador de notificaciones push: hasta que las desactives, cierres sesión o deje de ser válido.
+• El registro de que aceptaste los términos y esta política, los registros de moderación y las denuncias: el tiempo necesario para atender reclamos o requerimientos de autoridades y el que exija la ley, sin usarlos para nada más.
+
+Cuando pidas eliminar tu cuenta, borraremos tus datos en un plazo máximo de 15 días, salvo lo que debamos conservar según el punto anterior.
+
+9. TUS DERECHOS
+
+Según la LOPDP tienes derecho a:
+
+• Acceder a tus datos y saber cómo los tratamos.
+• Rectificarlos y actualizarlos si son incorrectos o están incompletos. Muchos los puedes cambiar tú mismo desde la configuración de tu cuenta.
+• Eliminarlos.
+• Oponerte a un tratamiento o pedir que se suspenda.
+• Pedir la portabilidad, es decir, recibir tus datos en un formato estructurado y de uso común.
+• No ser objeto de decisiones basadas únicamente en tratamientos automatizados y pedir la revisión de una persona.
+• Retirar tu consentimiento en cualquier momento, sin que eso afecte lo hecho antes de retirarlo.
+
+Para ejercerlos escribe a baknazoplace@gmail.com desde el correo de tu cuenta, indicando qué derecho quieres ejercer. Es gratis. Podemos pedirte que confirmes que eres el titular de la cuenta, pero nunca te pediremos tu contraseña. Te responderemos en un plazo máximo de 15 días.
+
+Si consideras que no atendimos bien tu solicitud o que tratamos tus datos de forma indebida, puedes presentar un reclamo ante la Superintendencia de Protección de Datos Personales del Ecuador.
+
+10. COOKIES Y ALMACENAMIENTO EN TU NAVEGADOR
+
+BAKNAZO no usa cookies de publicidad ni herramientas de rastreo de terceros. Solo usamos:
+
+• Una cookie necesaria y protegida (HttpOnly) que mantiene tu sesión iniciada. Sin ella no se puede entrar a tu cuenta.
+• El almacenamiento de tu navegador (sessionStorage y localStorage) para recordar, por ejemplo, el borrador del anuncio que estás escribiendo, tu ubicación durante la visita o tus preferencias de la aplicación. Estos datos se quedan en tu dispositivo.
+
+11. MENORES DE EDAD
+
+BAKNAZO es solo para mayores de 18 años y no recopilamos a sabiendas datos de menores. Si detectamos una cuenta de un menor de edad, la cerraremos y eliminaremos sus datos.
+
+12. SEGURIDAD
+
+Protegemos tus datos con medidas técnicas y organizativas: contraseñas cifradas, conexiones cifradas mediante HTTPS, límites de intentos, acceso restringido al panel de administración con permisos por persona y registro de las acciones del equipo.
+
+Ningún sistema es infalible. Si ocurre una vulneración de seguridad que afecte tus datos, la notificaremos a la Superintendencia de Protección de Datos Personales y a las personas afectadas en los plazos que establece la ley.
+
+13. CAMBIOS A ESTA POLÍTICA
+
+Si cambiamos esta política publicaremos la nueva versión con su número y fecha. Si los cambios son importantes, te la mostraremos al entrar a tu cuenta y te pediremos que la aceptes.
+
+14. RESPONSABLE Y CONTACTO
+
+BAKNAZO es operado por Edgar J. Espinoza Z. (persona natural), con domicilio en Santo Domingo, Ecuador. Es el responsable del tratamiento de tus datos personales.
+
+Para cualquier asunto sobre tus datos, o para ejercer tus derechos, escribe a baknazoplace@gmail.com.
+',
+        TRUE)
+-- Si esta versión ya se cargó antes con otro texto y nadie la ha
+-- aceptado todavía, se corrige el texto; si alguien ya la aceptó, se
+-- deja intacta (es la prueba de lo que aceptó).
+ON CONFLICT (clave, version) DO UPDATE
+    SET titulo = EXCLUDED.titulo, contenido = EXCLUDED.contenido
+    WHERE NOT EXISTS (
+        SELECT 1 FROM aceptaciones_politicas a WHERE a.politica_id = politicas.id
+    );
+
+COMMIT;
+
+
 
 -- ============================================================
 -- ANUNCIOS (productos · servicios · empleo)
@@ -1457,3 +2002,14 @@ ALTER TABLE notificaciones ADD CONSTRAINT notificaciones_tipo_check CHECK (tipo 
 -- ============================================================
 ALTER TABLE anuncio_empleo ADD COLUMN IF NOT EXISTS preguntas JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE postulaciones ADD COLUMN IF NOT EXISTS respuestas JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+-- ============================================================
+-- Confirmación de mayoría de edad
+--
+-- La tercera casilla del registro ("Confirmo que soy mayor de 18
+-- años"). Los Términos solo admiten mayores de edad, y esta fecha
+-- es la constancia de que esta cuenta lo confirmó al crearse.
+-- NULL = cuenta anterior a esta columna (aceptó los Términos v1,
+-- que ya exigían ser mayor de 18).
+-- ============================================================
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS mayor_edad_confirmada_en TIMESTAMPTZ;

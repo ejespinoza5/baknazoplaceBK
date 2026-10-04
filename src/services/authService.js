@@ -152,6 +152,12 @@ const validarConsentimiento = async (consentimiento) => {
         );
     }
 
+    // La tercera casilla del registro. Los Términos solo admiten mayores de 18,
+    // y la confirmación tiene que constar aquí, no solo en el formulario.
+    if (!consentimiento || consentimiento.mayorDeEdad !== true) {
+        throw error('Debes confirmar que eres mayor de 18 años para crear tu cuenta', 400);
+    }
+
     const terminos = await politicaModel.buscarPorClaveYVersionVigente('TERMINOS', terminosVersion);
     const privacidad = await politicaModel.buscarPorClaveYVersionVigente('PRIVACIDAD', privacidadVersion);
     if (!terminos || !privacidad) {
@@ -165,22 +171,66 @@ const validarConsentimiento = async (consentimiento) => {
 };
 
 // Guarda la aceptación dentro de la transacción del registro (prueba de consentimiento).
+// También fecha la confirmación de mayoría de edad, que validarConsentimiento ya exigió.
 const registrarConsentimiento = async (client, usuarioId, politicas, ip, userAgent) => {
     await aceptacionPoliticaModel.crear({ usuarioId, politicaId: politicas.terminosId, ip, userAgent, client });
     await aceptacionPoliticaModel.crear({ usuarioId, politicaId: politicas.privacidadId, ip, userAgent, client });
+    await client.query('UPDATE usuarios SET mayor_edad_confirmada_en = NOW() WHERE id = $1', [usuarioId]);
+};
+
+const aPoliticaPublica = (p) => ({
+    id: p.id,
+    clave: p.clave,
+    version: p.version,
+    titulo: p.titulo,
+    contenido: p.contenido,
+    fecha_publicacion: p.fecha_publicacion,
+});
+
+// Lo que el usuario debe aceptar para seguir: las vigentes que aún no aceptó.
+const listarPoliticasPendientes = async (usuarioId) => {
+    const pendientes = await politicaModel.listarPendientesDe(usuarioId);
+    return pendientes.map(aPoliticaPublica);
+};
+
+/**
+ * Acepta las versiones nuevas. Se exige la versión exacta de cada pendiente:
+ * si mientras leía se publicó otra, se rechaza para que acepte lo que vio.
+ * Queda la misma prueba que en el registro (IP, navegador y fecha).
+ */
+const aceptarPoliticasPendientes = async (usuarioId, aceptadas, mayorDeEdad, ip, userAgent) => {
+    const versiones = new Map(
+        (Array.isArray(aceptadas) ? aceptadas : [])
+            .filter((a) => a && typeof a.clave === 'string' && Number.isInteger(a.version))
+            .map((a) => [a.clave, a.version])
+    );
+    const pendientes = await politicaModel.listarPendientesDe(usuarioId);
+    if (pendientes.some((p) => versiones.get(p.clave) !== p.version)) {
+        throw error('Las políticas cambiaron mientras las leías. Revisa la versión vigente y acéptala de nuevo.', 409);
+    }
+    // Aceptar Términos nuevos es aceptar que la cuenta es de un mayor de edad:
+    // se pide confirmarlo, igual que en el registro.
+    const incluyeTerminos = pendientes.some((p) => p.clave === 'TERMINOS');
+    if (incluyeTerminos && mayorDeEdad !== true) {
+        throw error('Debes confirmar que eres mayor de 18 años para seguir usando tu cuenta', 400);
+    }
+    for (const p of pendientes) {
+        await aceptacionPoliticaModel.crear({ usuarioId, politicaId: p.id, ip, userAgent });
+    }
+    if (incluyeTerminos) {
+        // Las cuentas anteriores a la columna quedan fechadas aquí; las demás conservan su fecha.
+        await pool.query(
+            'UPDATE usuarios SET mayor_edad_confirmada_en = COALESCE(mayor_edad_confirmada_en, NOW()) WHERE id = $1',
+            [usuarioId]
+        );
+    }
+    return { aceptadas: pendientes.length };
 };
 
 // Políticas vigentes visibles en el registro (permiten "consentimiento informado").
 const listarPoliticas = async () => {
     const politicas = await politicaModel.listarVigentes();
-    return politicas.map((p) => ({
-        id: p.id,
-        clave: p.clave,
-        version: p.version,
-        titulo: p.titulo,
-        contenido: p.contenido,
-        fecha_publicacion: p.fecha_publicacion,
-    }));
+    return politicas.map(aPoliticaPublica);
 };
 
 // Normaliza coordenadas y valida los datos del negocio (registro manual y con Google).
@@ -1081,6 +1131,8 @@ module.exports = {
     correoExiste,
     reenviarVerificacion,
     listarPoliticas,
+    listarPoliticasPendientes,
+    aceptarPoliticasPendientes,
     iniciarSesion,
     refrescarToken,
     cerrarSesion,

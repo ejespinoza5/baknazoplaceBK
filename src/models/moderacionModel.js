@@ -304,7 +304,9 @@ const estadisticas = async () => {
     `);
     // Publicaciones de los últimos 14 días, para la serie del panel.
     const { rows: serie } = await pool.query(`
-        SELECT d::date AS dia,
+        -- Texto 'YYYY-MM-DD': un DATE crudo, node-pg lo convierte en Date y viaja
+        -- como '2026-10-02T05:00:00.000Z', que el panel no sabe leer (salía NaN).
+        SELECT to_char(d, 'YYYY-MM-DD') AS dia,
                (SELECT COUNT(*)::int FROM anuncios a WHERE a.creado_en >= d AND a.creado_en < d + INTERVAL '1 day') AS total
         FROM generate_series(date_trunc('day', NOW()) - INTERVAL '13 days', date_trunc('day', NOW()), INTERVAL '1 day') d
         ORDER BY d`);

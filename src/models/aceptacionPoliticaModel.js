@@ -7,6 +7,7 @@ const crear = async ({ usuarioId, politicaId, ip, userAgent, client }) => {
     const { rows } = await db.query(
         `INSERT INTO aceptaciones_politicas (usuario_id, politica_id, ip, user_agent)
          VALUES ($1, $2, $3, $4)
+         ON CONFLICT (usuario_id, politica_id) DO NOTHING
          RETURNING id`,
         [usuarioId, politicaId, ip || null, userAgent || null]
     );

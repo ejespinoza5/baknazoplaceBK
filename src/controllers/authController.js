@@ -73,6 +73,8 @@ const registrar = async (req, res, next) => {
             consentimiento: {
                 terminosVersion: nro(req.body.acepta_terminos_version),
                 privacidadVersion: nro(req.body.acepta_privacidad_version),
+                // Llega como booleano (JSON) o como 'true' (FormData con foto).
+                mayorDeEdad: req.body.confirma_mayor_edad === true || req.body.confirma_mayor_edad === 'true',
             },
             ip: req.ip,
             user_agent: req.headers['user-agent'],
@@ -127,6 +129,31 @@ const listarPoliticas = async (req, res, next) => {
     try {
         const politicas = await authService.listarPoliticas();
         res.json({ politicas });
+    } catch (err) {
+        next(err);
+    }
+};
+
+const politicasPendientes = async (req, res, next) => {
+    try {
+        const politicas = await authService.listarPoliticasPendientes(req.usuario.id);
+        res.set('Cache-Control', 'no-store');
+        res.json({ politicas });
+    } catch (err) {
+        next(err);
+    }
+};
+
+const aceptarPoliticas = async (req, res, next) => {
+    try {
+        const resultado = await authService.aceptarPoliticasPendientes(
+            req.usuario.id,
+            req.body?.politicas,
+            req.body?.confirma_mayor_edad === true,
+            req.ip,
+            req.headers['user-agent']
+        );
+        res.json(resultado);
     } catch (err) {
         next(err);
     }
@@ -212,6 +239,8 @@ const loginGoogle = async (req, res, next) => {
             consentimiento: {
                 terminosVersion: nro(req.body.acepta_terminos_version),
                 privacidadVersion: nro(req.body.acepta_privacidad_version),
+                // Llega como booleano (JSON) o como 'true' (FormData con foto).
+                mayorDeEdad: req.body.confirma_mayor_edad === true || req.body.confirma_mayor_edad === 'true',
             },
             ip: req.ip,
             user_agent: req.headers['user-agent'],
@@ -424,6 +453,8 @@ module.exports = {
     registrar,
     listarCategorias,
     listarPoliticas,
+    politicasPendientes,
+    aceptarPoliticas,
     verificarCorreo,
     correoExiste,
     reenviarVerificacion,

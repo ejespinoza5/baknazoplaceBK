@@ -20,6 +20,7 @@ const adminRoutes = require('./routes/adminRoutes');
 const soporteRoutes = require('./routes/soporteRoutes');
 const { adjuntarChat } = require('./realtime/chatSocket');
 const notificacionService = require('./services/notificacionService');
+const { limitadorGeneral } = require('./middlewares/rateLimiter');
 const app = express();
 
 // En producción la API está detrás de un proxy inverso (Nginx) que envía X-Forwarded-For.
@@ -50,6 +51,9 @@ app.use('/uploads', permitirCrossOrigin, express.static(env.uploadDir));
 
 // Archivos públicos del proyecto
 app.use('/public', permitirCrossOrigin, express.static(path.join(__dirname, '..', 'public')));
+
+// Tope general por IP para toda la API (cada ruta sensible tiene además el suyo).
+app.use('/api', limitadorGeneral);
 
 // Rutas de autenticación
 app.use('/api/auth', authRoutes);
@@ -102,7 +106,7 @@ app.use((err, req, res, next) => {
 });
 
 app.get('/', (req, res) => {
-    res.json({ mensaje: 'API funcionando' });
+    res.json({ mensaje: 'API funcionando correctamente' });
 });
 
 const PORT = process.env.PORT || 3000;

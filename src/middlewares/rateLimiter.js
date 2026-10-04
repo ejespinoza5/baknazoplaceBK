@@ -13,6 +13,35 @@ const crearLimitador = (nombre, ventanaMinutos, maxIntentos, mensaje) =>
     });
 
 module.exports = {
+    // Red de seguridad para toda la API, por IP. Holgado a propósito: en Ecuador
+    // muchas líneas móviles comparten IP (CGNAT) y una sesión normal hace pocas
+    // peticiones por minuto. Frena el raspado masivo y las ráfagas contra las
+    // lecturas públicas (feed, anuncio, perfil, catálogos), que no tenían límite.
+    limitadorGeneral: rateLimit({
+        store: new AlmacenLimites('limitadorGeneral'),
+        windowMs: 60 * 1000,
+        max: 600,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: {
+            error: 'Demasiadas solicitudes seguidas. Espera un momento.',
+            message: 'Demasiadas solicitudes seguidas. Espera un momento.',
+        },
+    }),
+    // Editar un anuncio también sube fotos: por usuario, para que nadie llene
+    // el disco a base de PATCH. Cubre de sobra a quien corrige su anuncio.
+    limitadorEdicion: rateLimit({
+        store: new AlmacenLimites('limitadorEdicion'),
+        windowMs: 60 * 60 * 1000,
+        max: 60,
+        standardHeaders: true,
+        legacyHeaders: false,
+        keyGenerator: (req) => `usuario:${req.usuario.id}`,
+        message: {
+            error: 'Hiciste demasiados cambios seguidos. Espera un rato e inténtalo de nuevo.',
+            message: 'Hiciste demasiados cambios seguidos. Espera un rato e inténtalo de nuevo.',
+        },
+    }),
     limitadorRegistro: crearLimitador('limitadorRegistro', 60, 8, 'Demasiados registros desde esta IP. Intenta más tarde.'),
     limitadorCorreo: crearLimitador('limitadorCorreo', 15, 30, 'Demasiadas consultas de correo. Intenta más tarde.'),
     limitadorLogin: crearLimitador('limitadorLogin', 15, 10, 'Demasiados intentos de inicio de sesión. Intenta más tarde.'),
