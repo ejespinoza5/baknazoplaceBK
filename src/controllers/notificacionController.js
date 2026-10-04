@@ -29,6 +29,7 @@ module.exports = {
         notificacionService.registrarDispositivo({
             usuarioId: req.usuario.id,
             token: (req.body || {}).token,
+            plataforma: (req.body || {}).plataforma,
             navegador: req.get('user-agent'),
         })
     ),

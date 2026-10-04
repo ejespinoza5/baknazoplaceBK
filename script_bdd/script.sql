@@ -1720,12 +1720,18 @@ CREATE TABLE IF NOT EXISTS dispositivos_push (
     id              BIGSERIAL PRIMARY KEY,
     usuario_id      UUID         NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
     token           TEXT         NOT NULL UNIQUE CHECK (char_length(token) BETWEEN 20 AND 4096),
-    plataforma      VARCHAR(20)  NOT NULL DEFAULT 'web' CHECK (plataforma IN ('web')),
+    plataforma      VARCHAR(20)  NOT NULL DEFAULT 'web' CHECK (plataforma IN ('web', 'android')),
     navegador       VARCHAR(160),
     creado_en       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     actualizado_en  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_dispositivos_push_usuario ON dispositivos_push (usuario_id);
+
+-- La app de Android registra sus tokens como 'android': a esos el aviso se les
+-- manda ya armado (el navegador lo arma su service worker). Para bases que ya
+-- tenían la tabla con el CHECK anterior, que solo admitía 'web'.
+ALTER TABLE dispositivos_push DROP CONSTRAINT IF EXISTS dispositivos_push_plataforma_check;
+ALTER TABLE dispositivos_push ADD CONSTRAINT dispositivos_push_plataforma_check CHECK (plataforma IN ('web', 'android'));
 
 -- Preferencias. categorias = {"seguidores": {"app": true, "push": false}, …};
 -- una categoría o canal ausente cuenta como activado. El sonido es el de los

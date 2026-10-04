@@ -229,10 +229,10 @@ const despachar = async (id) => {
     const ultimo = fila.push_enviado_en ? new Date(fila.push_enviado_en).getTime() : 0;
     if (fila.clave_grupo && Date.now() - ultimo < PUSH_GRUPO_CADA_MS) return;
 
-    const tokens = await notificacionModel.tokensDe(fila.usuario_id);
-    if (tokens.length === 0) return;
+    const dispositivos = await notificacionModel.tokensDe(fila.usuario_id);
+    if (dispositivos.length === 0) return;
     const { url } = componer(fila);
-    const { invalidos } = await fcmService.enviar(tokens, {
+    const { invalidos } = await fcmService.enviar(dispositivos, {
         id: String(fila.id),
         titulo: 'Baknazo',
         texto: TEXTO_PUSH[fila.tipo] || 'Tienes una notificación nueva',
@@ -368,12 +368,17 @@ const guardarPreferencias = async ({ usuarioId, datos }) => {
     return { ...normalizarPreferencias(guardadas), pushDisponible: fcmService.configurado() };
 };
 
-const registrarDispositivo = async ({ usuarioId, token, navegador }) => {
+const PLATAFORMAS = ['web', 'android'];
+
+const registrarDispositivo = async ({ usuarioId, token, plataforma, navegador }) => {
     if (typeof token !== 'string' || token.length < 20 || token.length > 4096 || !/^[\w:.-]+$/.test(token)) {
         throw error('Token de dispositivo inválido', 400);
     }
+    // Sin plataforma es un navegador: así siguen funcionando los clientes web de antes.
+    const plat = plataforma === undefined ? 'web' : plataforma;
+    if (!PLATAFORMAS.includes(plat)) throw error('Plataforma de dispositivo inválida', 400);
     const nav = typeof navegador === 'string' ? navegador.slice(0, 160) : null;
-    await notificacionModel.registrarDispositivo({ usuarioId, token, navegador: nav });
+    await notificacionModel.registrarDispositivo({ usuarioId, token, plataforma: plat, navegador: nav });
     return { registrado: true };
 };
 

@@ -193,14 +193,15 @@ const guardarPreferencias = async (usuarioId, { categorias, sonido }) => {
 
 // ---------- Dispositivos ----------
 
-// El token es del navegador: si ya estaba con otra cuenta, pasa a esta.
-const registrarDispositivo = async ({ usuarioId, token, navegador }) => {
+// El token es del navegador (o del teléfono): si ya estaba con otra cuenta, pasa a esta.
+const registrarDispositivo = async ({ usuarioId, token, plataforma, navegador }) => {
     await pool.query(
-        `INSERT INTO dispositivos_push (usuario_id, token, navegador)
-         VALUES ($1, $2, $3)
+        `INSERT INTO dispositivos_push (usuario_id, token, plataforma, navegador)
+         VALUES ($1, $2, $3, $4)
          ON CONFLICT (token) DO UPDATE
-             SET usuario_id = EXCLUDED.usuario_id, navegador = EXCLUDED.navegador, actualizado_en = NOW()`,
-        [usuarioId, token, navegador]
+             SET usuario_id = EXCLUDED.usuario_id, plataforma = EXCLUDED.plataforma,
+                 navegador = EXCLUDED.navegador, actualizado_en = NOW()`,
+        [usuarioId, token, plataforma, navegador]
     );
     // Como mucho diez dispositivos por persona: se olvidan los más viejos.
     await pool.query(
@@ -218,9 +219,10 @@ const eliminarDispositivo = async (usuarioId, token) => {
     return rowCount > 0;
 };
 
+// Con su plataforma: el mensaje se arma distinto para el navegador y para Android.
 const tokensDe = async (usuarioId) => {
-    const { rows } = await pool.query('SELECT token FROM dispositivos_push WHERE usuario_id = $1', [usuarioId]);
-    return rows.map((r) => r.token);
+    const { rows } = await pool.query('SELECT token, plataforma FROM dispositivos_push WHERE usuario_id = $1', [usuarioId]);
+    return rows;
 };
 
 const eliminarTokens = async (tokens) => {

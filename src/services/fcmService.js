@@ -29,30 +29,54 @@ const codigoDeError = (e) => {
     return fcm || e?.response?.data?.error?.status || null;
 };
 
-// Manda un mensaje solo de datos a cada token. El service worker del
-// navegador lo convierte en notificación: así decide el sonido, la etiqueta
-// que agrupa y a dónde lleva al pulsarla. Todos los valores de `data` deben
-// ser texto (lo exige FCM).
+// El mensaje según quién lo recibe.
 //
+// - Navegador: solo datos. Su service worker lo convierte en notificación y
+//   decide el sonido, la etiqueta que agrupa y a dónde lleva al pulsarla.
+// - Android (la app): un mensaje solo de datos no se ve con la app cerrada,
+//   así que va con la notificación armada. El canal decide si suena (la app
+//   crea 'baknazo' y 'baknazo-silencio'), el tag agrupa como en la web y
+//   `data.url` es la pantalla que abre la app al pulsarla.
+//
+// Todos los valores de `data` deben ser texto (lo exige FCM).
+const mensajePara = ({ token, plataforma }, data) => {
+    if (plataforma === 'android') {
+        return {
+            token,
+            data,
+            android: {
+                priority: 'HIGH',
+                ttl: '86400s',
+                notification: {
+                    title: data.titulo,
+                    body: data.texto,
+                    tag: data.etiqueta,
+                    channel_id: data.silencio === '1' ? 'baknazo-silencio' : 'baknazo',
+                    icon: 'ic_stat_baknazo',
+                    color: '#ffb800',
+                },
+            },
+        };
+    }
+    return { token, data, webpush: { headers: { Urgency: 'high', TTL: String(24 * 60 * 60) } } };
+};
+
 // Devuelve los tokens que FCM declaró inválidos, para borrarlos.
-const enviar = async (tokens, data) => {
-    if (!configurado() || tokens.length === 0) return { invalidos: [] };
+// `dispositivos` son filas { token, plataforma }; un texto suelto cuenta como navegador.
+const enviar = async (dispositivos, data) => {
+    if (!configurado() || dispositivos.length === 0) return { invalidos: [] };
     const url = `https://fcm.googleapis.com/v1/projects/${env.firebase.projectId}/messages:send`;
     const invalidos = [];
 
     await Promise.all(
-        tokens.map(async (token) => {
+        dispositivos.map(async (dispositivo) => {
+            const destino = typeof dispositivo === 'string' ? { token: dispositivo, plataforma: 'web' } : dispositivo;
+            const { token } = destino;
             try {
                 await obtenerCliente().request({
                     url,
                     method: 'POST',
-                    data: {
-                        message: {
-                            token,
-                            data,
-                            webpush: { headers: { Urgency: 'high', TTL: String(24 * 60 * 60) } },
-                        },
-                    },
+                    data: { message: mensajePara(destino, data) },
                 });
             } catch (e) {
                 const codigo = codigoDeError(e);
