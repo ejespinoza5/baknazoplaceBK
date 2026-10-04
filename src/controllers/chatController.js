@@ -1,4 +1,6 @@
+const crypto = require('crypto');
 const chatService = require('../services/chatService');
+const tokenRespuesta = require('../utils/tokenRespuesta');
 
 const baseUrl = (req) => `${req.protocol}://${req.get('host')}`;
 
@@ -82,4 +84,31 @@ const desbloquear = async (req, res, next) => {
     }
 };
 
-module.exports = { listar, obtener, iniciar, listarMensajes, marcarLeida, contarNoLeidos, bloquear, desbloquear };
+// Responder desde la notificación: el mismo envío que el chat (bloqueos,
+// cuenta suspendida, límites de texto) y, como quien responde ya leyó el
+// mensaje, la conversación queda leída.
+const responderPush = async (req, res, next) => {
+    try {
+        sinCache(res);
+        const { token, texto } = req.body || {};
+        let destino;
+        try {
+            destino = tokenRespuesta.verificar(String(token || ''));
+        } catch {
+            return res.status(401).json({ error: 'Esta notificación ya no permite responder. Abre Baknazo para contestar.' });
+        }
+        const mensaje = await chatService.enviar({
+            usuarioId: destino.usuarioId,
+            conversacionId: destino.conversacionId,
+            contenido: texto,
+            clienteId: `push-${crypto.randomUUID().replace(/-/g, '')}`,
+            base: baseUrl(req),
+        });
+        await chatService.marcarLeida({ usuarioId: destino.usuarioId, id: destino.conversacionId }).catch(() => undefined);
+        res.status(201).json({ mensaje });
+    } catch (err) {
+        next(err);
+    }
+};
+
+module.exports = { responderPush, listar, obtener, iniciar, listarMensajes, marcarLeida, contarNoLeidos, bloquear, desbloquear };

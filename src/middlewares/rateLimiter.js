@@ -42,6 +42,9 @@ module.exports = {
             message: 'Hiciste demasiados cambios seguidos. Espera un rato e inténtalo de nuevo.',
         },
     }),
+    // Responder desde la notificación del teléfono: no hay sesión (el permiso va
+    // en el push), así que se limita por IP.
+    limitadorRespuestaPush: crearLimitador('limitadorRespuestaPush', 15, 60, 'Demasiadas respuestas seguidas. Abre la app para seguir escribiendo.'),
     limitadorRegistro: crearLimitador('limitadorRegistro', 60, 8, 'Demasiados registros desde esta IP. Intenta más tarde.'),
     limitadorCorreo: crearLimitador('limitadorCorreo', 15, 30, 'Demasiadas consultas de correo. Intenta más tarde.'),
     limitadorLogin: crearLimitador('limitadorLogin', 15, 10, 'Demasiados intentos de inicio de sesión. Intenta más tarde.'),

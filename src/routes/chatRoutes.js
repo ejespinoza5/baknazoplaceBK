@@ -2,7 +2,12 @@ const express = require('express');
 const router = express.Router();
 const chatController = require('../controllers/chatController');
 const { requiereAutenticacion } = require('../middlewares/authMiddleware');
-const { limitadorChat } = require('../middlewares/rateLimiter');
+const { limitadorChat, limitadorRespuestaPush } = require('../middlewares/rateLimiter');
+
+// Responder desde la notificación del teléfono. Va antes del requiereAutenticacion:
+// no hay sesión, la autoriza el permiso firmado que viajó en el push y que solo
+// sirve para esa conversación.
+router.post('/responder-push', limitadorRespuestaPush, chatController.responderPush);
 
 // Todo el chat es privado. Los mensajes se envían por el WebSocket (/ws/chat);
 // aquí está lo que se consulta: la bandeja, el historial y las marcas de leído.

@@ -1,6 +1,7 @@
 const notificacionModel = require('../models/notificacionModel');
 const fcmService = require('./fcmService');
 const hub = require('../realtime/hub');
+const tokenRespuesta = require('../utils/tokenRespuesta');
 
 // El sistema de notificaciones. Los demás servicios solo llaman a `notificar`
 // con qué pasó; aquí se decide si se guarda (preferencias), se agrupa, se
@@ -30,8 +31,9 @@ const CATEGORIAS = ['seguidores', 'interacciones', 'mensajes', 'publicaciones', 
 const SIEMPRE_EN_APP = new Set(['publicaciones', 'seguridad']);
 const SONIDOS = ['ninguno', 'campana', 'burbuja', 'pop', 'marimba'];
 
-// El push nunca lleva nombres, títulos ni contenido: la pantalla de bloqueo
-// la puede ver cualquiera. El detalle está dentro de la app, con sesión.
+// La versión discreta de cada aviso. El push lleva el detalle (quién y qué,
+// el texto del mensaje), y esta es la que Android muestra en la pantalla de
+// bloqueo cuando la persona eligió ocultar el contenido sensible.
 const TEXTO_PUSH = {
     SEGUIDOR: 'Tienes nuevos seguidores',
     ME_GUSTA: 'A alguien le gustó tu publicación',
@@ -52,6 +54,12 @@ const TEXTO_PUSH = {
 
 // Un push por grupo cada tanto: veinte likes seguidos no son veinte avisos.
 const PUSH_GRUPO_CADA_MS = 5 * 60 * 1000;
+// Los mensajes avisan siempre, uno por uno (como cualquier chat): la etiqueta
+// del grupo hace que el nuevo reemplace al anterior en vez de apilarse.
+const SIN_ESPERA = new Set(['MENSAJE', 'SOPORTE']);
+// FCM admite 4 KB por mensaje: el texto de un chat va recortado.
+const TEXTO_PUSH_MAX = 400;
+const recortar = (t) => (t.length > TEXTO_PUSH_MAX ? `${t.slice(0, TEXTO_PUSH_MAX - 1)}…` : t);
 
 const ESTADO_POSTULANTE = {
     VISTA: 'vista por la empresa',
@@ -211,8 +219,9 @@ const preferenciasDe = async (usuarioId) => normalizarPreferencias(await notific
 // ---------- Reparto ----------
 
 // Avisa en vivo a las pestañas abiertas y, si no hay ninguna (o es de
-// seguridad), manda push.
-const despachar = async (id) => {
+// seguridad), manda push. `extra` trae lo que no se guarda en la notificación
+// pero sí va en el push (el texto del mensaje de chat).
+const despachar = async (id, extra = {}) => {
     const fila = await notificacionModel.buscarPorId(id);
     if (!fila) return;
     const prefs = await preferenciasDe(fila.usuario_id);
@@ -227,20 +236,31 @@ const despachar = async (id) => {
     if (!fcmService.configurado()) return;
 
     const ultimo = fila.push_enviado_en ? new Date(fila.push_enviado_en).getTime() : 0;
-    if (fila.clave_grupo && Date.now() - ultimo < PUSH_GRUPO_CADA_MS) return;
+    if (fila.clave_grupo && !SIN_ESPERA.has(fila.tipo) && Date.now() - ultimo < PUSH_GRUPO_CADA_MS) return;
 
     const dispositivos = await notificacionModel.tokensDe(fila.usuario_id);
     if (dispositivos.length === 0) return;
-    const { url } = componer(fila);
-    const { invalidos } = await fcmService.enviar(dispositivos, {
+    const { texto, url } = componer(fila);
+    // Un mensaje se lee como en cualquier chat: quien escribe arriba y lo que
+    // escribió debajo. Lo demás, con el texto de la campana ("Ana empezó a seguirte").
+    const esMensaje = fila.tipo === 'MENSAJE' && typeof extra.mensaje === 'string' && extra.mensaje.trim();
+    const datos = {
         id: String(fila.id),
-        titulo: 'Baknazo',
-        texto: TEXTO_PUSH[fila.tipo] || 'Tienes una notificación nueva',
+        tipo: fila.tipo,
+        titulo: esMensaje ? nombreActor(fila) : 'Baknazo',
+        texto: recortar(esMensaje ? extra.mensaje.trim() : texto),
+        // Lo que se ve con la pantalla bloqueada si se ocultó el contenido.
+        discreto: TEXTO_PUSH[fila.tipo] || 'Tienes una notificación nueva',
         url,
         // La misma etiqueta reemplaza el aviso anterior del grupo en vez de apilarse.
         etiqueta: fila.clave_grupo || `notificacion-${fila.id}`,
         silencio: prefs.sonido === 'ninguno' ? '1' : '0',
-    });
+    };
+    // Responder desde la notificación (solo la app de Android lo usa).
+    if (esMensaje && fila.conversacion_id) {
+        datos.responder = tokenRespuesta.firmar(fila.usuario_id, fila.conversacion_id);
+    }
+    const { invalidos } = await fcmService.enviar(dispositivos, datos);
     await notificacionModel.eliminarTokens(invalidos);
     await notificacionModel.marcarPushEnviado(fila.id);
 };
@@ -260,7 +280,7 @@ const notificar = async (n) => {
         const prefs = await preferenciasDe(n.usuarioId);
         if (!prefs.categorias[CATEGORIA[n.tipo]].app) return;
         const id = await notificacionModel.registrar(n);
-        if (id) await despachar(id);
+        if (id) await despachar(id, n.push);
     } catch (e) {
         console.error('[notificaciones]', n?.tipo, e.message);
     }

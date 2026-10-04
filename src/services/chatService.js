@@ -302,6 +302,8 @@ const enviar = async ({ usuarioId, conversacionId, contenido, clienteId, base, s
         actorId: usuarioId,
         conversacionId: c.id,
         claveGrupo: `mensajes:${c.id}`,
+        // Solo para el push (no se guarda en la notificación).
+        push: { mensaje: texto },
     });
 
     return aMensaje(mensaje, usuarioId);
