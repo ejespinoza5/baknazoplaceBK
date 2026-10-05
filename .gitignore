@@ -91,3 +91,6 @@ public/uploads/
 .prettierignore
 # Hojas de vida y demás archivos privados (nunca al repo)
 privado/
+
+# APK y version.json de la app de Android: se suben al servidor, no al repositorio.
+app-descargas/

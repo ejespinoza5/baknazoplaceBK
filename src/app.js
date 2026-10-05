@@ -52,6 +52,20 @@ app.use('/uploads', permitirCrossOrigin, express.static(env.uploadDir));
 // Archivos públicos del proyecto
 app.use('/public', permitirCrossOrigin, express.static(path.join(__dirname, '..', 'public')));
 
+// Actualizaciones de la app de Android sin Play Store: aquí van version.json y
+// las APK (Baknazo-1.1.apk…). La app consulta version.json al abrirse; nunca
+// se cachea, para que vea la versión nueva apenas se sube.
+app.use(
+    '/app',
+    permitirCrossOrigin,
+    express.static(process.env.APP_DIR || path.join(__dirname, '..', 'app-descargas'), {
+        setHeaders: (res, ruta) => {
+            if (ruta.endsWith('.json')) res.setHeader('Cache-Control', 'no-store');
+            if (ruta.endsWith('.apk')) res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+        },
+    })
+);
+
 // Tope general por IP para toda la API (cada ruta sensible tiene además el suyo).
 app.use('/api', limitadorGeneral);
 
