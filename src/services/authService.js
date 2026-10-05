@@ -15,7 +15,8 @@ const tokenService = require('./tokenService');
 const emailService = require('./emailService');
 const googleAuthService = require('./googleAuthService');
 const notificacionService = require('./notificacionService');
-const { procesarFotoPerfil, procesarLogo, rutaAbsolutaDe } = require('./imageService');
+const path = require('path');
+const { procesarFotoPerfil, procesarLogo, rutaAbsolutaDe, rutaAbsolutaDeStorageKey } = require('./imageService');
 const { generarCodigoNumerico, hashCodigo, hashToken } = require('../utils/codigos');
 const { normalizarTelefono } = require('../utils/telefono');
 const { privacidadDe, validarPrivacidad } = require('../utils/privacidad');
@@ -1125,7 +1126,79 @@ const cambiarContrasena = async ({ usuarioId, contrasena_actual, nueva_contrasen
     return { mensaje: 'Contraseña actualizada. Se cerraron las sesiones en otros dispositivos.', ...tokens };
 };
 
+// ---------- Eliminar la cuenta ----------
+
+/**
+ * Borra la cuenta y todo lo que cuelga de ella (LOPDP y Google Play: la
+ * persona puede eliminarla desde la propia app).
+ *
+ * En la base, cada tabla que depende del usuario tiene ON DELETE CASCADE
+ * (anuncios, mensajes, seguidores, postulaciones, negocio, sesiones…). Lo
+ * que la base no borra son los archivos: fotos de perfil, portada y logo,
+ * fotos de sus anuncios, las hojas de vida que subió y las que recibió en sus
+ * vacantes. Se anotan antes de borrar y se eliminan del disco después.
+ *
+ * Se confirma escribiendo ELIMINAR y, si la cuenta tiene contraseña, con ella:
+ * un token robado no basta para borrar la cuenta de nadie.
+ */
+const eliminarCuenta = async ({ usuarioId, contrasena, confirmacion }) => {
+    const usuario = await usuarioModel.buscarPorId(usuarioId);
+    if (!usuario) throw error('Usuario no encontrado', 404);
+    if (String(confirmacion || '').trim().toUpperCase() !== 'ELIMINAR') {
+        throw error('Para confirmar, escribe ELIMINAR', 400);
+    }
+    const cuenta = await cuentaAuthModel.buscarCuentaCorreo(usuario.id);
+    if (cuenta && cuenta.contrasena_hash) {
+        // 400 y no 401: un 401 haría que el cliente crea que la sesión expiró.
+        if (typeof contrasena !== 'string' || !(await bcrypt.compare(contrasena, cuenta.contrasena_hash))) {
+            throw error('La contraseña es incorrecta', 400);
+        }
+    }
+
+    const [fotosAnuncios, hojasDeVida] = await Promise.all([
+        pool.query(
+            `SELECT f.storage_key FROM anuncio_fotos f JOIN anuncios a ON a.id = f.anuncio_id
+             WHERE a.autor_usuario_id = $1`,
+            [usuario.id]
+        ),
+        pool.query(
+            `SELECT p.cv_key FROM postulaciones p
+             WHERE p.postulante_id = $1
+                OR p.anuncio_id IN (SELECT id FROM anuncios WHERE autor_usuario_id = $1)`,
+            [usuario.id]
+        ),
+    ]);
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        // Las visitas con sesión guardan el id en texto ('u:<id>'), sin clave foránea.
+        await client.query('DELETE FROM anuncio_vistas WHERE visitante = $1', [`u:${usuario.id}`]);
+        await client.query('DELETE FROM usuarios WHERE id = $1', [usuario.id]);
+        await client.query('COMMIT');
+    } catch (e) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw e;
+    } finally {
+        client.release();
+    }
+
+    // Ya sin la cuenta: los archivos. Si alguno no está, no pasa nada.
+    const privado = path.resolve(env.privadoDir);
+    const archivos = [
+        ...[usuario.foto_perfil, usuario.foto_logo, usuario.foto_portada].filter(Boolean).map(rutaAbsolutaDe),
+        ...fotosAnuncios.rows.map((f) => rutaAbsolutaDeStorageKey(f.storage_key)),
+        ...hojasDeVida.rows
+            .map((p) => path.resolve(privado, p.cv_key))
+            .filter((ruta) => ruta.startsWith(privado + path.sep)),
+    ].filter(Boolean);
+    await Promise.all(archivos.map((ruta) => fs.promises.unlink(ruta).catch(() => {})));
+
+    return { mensaje: 'Tu cuenta y tus datos se eliminaron.' };
+};
+
 module.exports = {
+    eliminarCuenta,
     registrar,
     verificarCorreo,
     correoExiste,

@@ -449,7 +449,20 @@ const cambiarContrasena = async (req, res, next) => {
     }
 };
 
+// Eliminar la cuenta: además de borrar los datos, se quita la cookie de sesión.
+const eliminarCuenta = async (req, res, next) => {
+    try {
+        const { contrasena, confirmacion } = req.body || {};
+        const resultado = await authService.eliminarCuenta({ usuarioId: req.usuario.id, contrasena, confirmacion });
+        borrarCookiesSesion(res);
+        res.json(resultado);
+    } catch (err) {
+        next(err);
+    }
+};
+
 module.exports = {
+    eliminarCuenta,
     registrar,
     listarCategorias,
     listarPoliticas,

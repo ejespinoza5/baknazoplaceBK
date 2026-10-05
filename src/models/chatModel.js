@@ -81,12 +81,13 @@ const obtenerOCrear = async ({ iniciadorId, destinatarioId, anuncioId }) => {
         [iniciadorId, destinatarioId, anuncioId]
     );
     const id = await delPar(iniciadorId, destinatarioId);
-    if (anuncioId) {
-        await pool.query(
-            'UPDATE conversaciones SET anuncio_id = $2 WHERE id = $1 AND anuncio_id IS DISTINCT FROM $2',
-            [id, anuncioId]
-        );
-    }
+    // El tema pasa a ser el de por dónde se entró: el anuncio, o ninguno si se
+    // escribió desde el perfil. Antes, entrar desde el perfil dejaba el anuncio
+    // anterior y los mensajes nuevos salían citándolo.
+    await pool.query(
+        'UPDATE conversaciones SET anuncio_id = $2 WHERE id = $1 AND anuncio_id IS DISTINCT FROM $2',
+        [id, anuncioId || null]
+    );
     return id;
 };
 

@@ -40,5 +40,8 @@ router.get('/me', requiereAutenticacion, authController.perfil);
 // La autenticación va antes de multer para no procesar archivos de peticiones sin token.
 router.patch('/perfil', requiereAutenticacion, uploadImagenes, authController.actualizarPerfil);
 router.put('/cambiar-contrasena', requiereAutenticacion, limitadorContrasena, authController.cambiarContrasena);
+// Eliminar la cuenta desde la app o la web. Mismo límite que el cambio de
+// contraseña: también exige la contraseña y no debe poder adivinarse.
+router.delete('/cuenta', requiereAutenticacion, limitadorContrasena, authController.eliminarCuenta);
 
 module.exports = router;
